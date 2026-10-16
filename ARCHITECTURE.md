@@ -1,6 +1,6 @@
 # 智能实验室预约系统：项目图解
 
-这份文档对应课程第 27 节。建议先从“系统全景”理解模块边界，再沿着预约和 AI 两条主流程阅读代码。
+建议先从“系统全景”理解模块边界，再沿着预约和 AI 两条主流程阅读代码。
 
 ## 1. 系统全景
 
@@ -149,14 +149,15 @@ flowchart TD
 2. `ai/tools.py` 的工具（共十个）可继续扩展；图内 `execute_tools_node` 与图外 `run_model_tools()` 都统一经 `_execute_tool` 分发。
 3. `stream_answer()` 已把本地回答与真实模型回答统一成流式迭代器，前端不需要区分实现。
 
-## 6. 课程节次与代码入口
+## 6. 功能模块与代码入口
 
-| 课程内容 | 前端入口 | 后端入口 |
+| 功能模块 | 前端入口 | 后端入口 |
 | --- | --- | --- |
-| 08～12 登录、axios、资料、密码、上传 | `utils/request.js`、`views/login.vue`、`views/user.vue` | `api/auth.py`、`api/user.py`、`api/upload.py` |
-| 13～14 用户管理 | `views/user.vue` | `api/user.py` |
-| 15～17 实验室与设备 | `views/lab.vue`、`views/equ.vue` | `api/lab.py`、`api/equipment.py` |
-| 18～19 预约与审核 | `views/reservation.vue` | `api/reservation.py` |
-| 20～25 AI、RAG、工具、Agent、SSE | `views/chat.vue` | `api/ai.py`、`ai/knowledge.py`、`ai/tools.py`、`ai/agent.py` |
-| 26 首页与收尾 | `views/home.vue` | `api/stats.py` |
+| 登录与鉴权（JWT、axios 封装、路由守卫） | `utils/request.js`、`utils/auth.js`、`router/index.js`、`views/login.vue`、`views/register.vue` | `api/auth.py`、`dependencies/auth.py`、`dependencies/permission.py`、`utils/jwt.py`、`utils/password.py` |
+| 用户与个人中心（资料、密码、头像上传、管理员用户管理） | `views/user.vue` | `api/user.py`、`api/upload.py` |
+| 实验室、设备与不可约时段 | `views/lab.vue`、`views/equ.vue` | `api/lab.py`、`api/equipment.py`、`api/blackout.py` |
+| 预约与审核 | `views/reservation.vue` | `api/reservation.py`、`services/reservation.py` |
+| 公告、报修与通知 | `views/announcement.vue`、`views/repair.vue`、`layouts/layouts.vue` | `api/announcement.py`、`api/repair.py`、`api/notification.py` |
+| AI 助手（RAG、Tool Calling、LangGraph、SSE） | `views/chat.vue` | `api/ai.py`、`ai/knowledge.py`、`ai/tools.py`、`ai/agent.py` |
+| 首页统计 | `views/home.vue` | `api/stats.py` |
 
