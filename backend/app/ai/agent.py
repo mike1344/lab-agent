@@ -226,7 +226,7 @@ def should_continue(state: AgentState) -> str:
 
 
 def build_graph():
-    """构建课程里画的循环图：agent → 有tool_calls → tools → agent → 没有 → END"""
+    """构建 Agent 循环图：agent → 有 tool_calls → tools（执行工具）→ 回到 agent；没有 tool_calls → END"""
     try:
         from langgraph.graph import END, StateGraph
 
@@ -347,7 +347,7 @@ def stream_answer(message: str, history: list[dict[str, str]], context: str):
         answer = (
             "我已根据本地知识库和系统实时数据完成查询。\n\n"
             f"{context}\n\n"
-            "如需由 AI 直接创建预约，请按 预约实验室ID 1 2026-10-01 09:00-11:00 用途：课程实验 的格式告诉我。"
+            "如需由 AI 直接创建预约，请按 预约实验室ID 1 2026-10-01 09:00-11:00 用途：实验教学 的格式告诉我。"
         )
         for index in range(0, len(answer), 12):
             yield answer[index : index + 12]

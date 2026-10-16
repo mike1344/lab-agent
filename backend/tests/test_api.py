@@ -192,7 +192,7 @@ class ApiFlowTest(unittest.TestCase):
         lab_response = self.client.post(
             "/api/labs",
             headers=admin_headers,
-            json={"name": "  人工智能实验室  ", "location": "实训楼 301", "capacity": 40, "description": "AI 课程实验", "status": 1},
+            json={"name": "  人工智能实验室  ", "location": "实训楼 301", "capacity": 40, "description": "AI 实验教学", "status": 1},
         ).json()
         self.assertEqual(lab_response["code"], 200)
         self.assertEqual(lab_response["data"]["name"], "人工智能实验室")
@@ -231,7 +231,7 @@ class ApiFlowTest(unittest.TestCase):
             "reservation_date": tomorrow,
             "start_time": "09:00:00",
             "end_time": "11:00:00",
-            "purpose": "人工智能课程实验",
+            "purpose": "人工智能实验教学",
         }
         reservation_response = self.client.post(
             "/api/reservations", headers=student_headers, json=reservation_data

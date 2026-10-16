@@ -45,7 +45,7 @@ def simple_search(query: str, limit: int = 3) -> list[dict[str, str]]:
 def build_local_embedding(text: str, dimensions: int = 128) -> list[float]:
     """把文本转换成可复现的轻量向量，避免首次运行再下载额外模型。
 
-    ChromaDB 默认会下载一个英文嵌入模型。课程项目在网络较慢、没有模型缓存时，
+    ChromaDB 默认会下载一个英文嵌入模型。在网络较慢、没有模型缓存的环境里，
     第一次检索可能长时间卡住。这里使用“字符 + 相邻双字符”的哈希向量：它不依赖
     网络，适合本项目规模较小的中文知识库。以后接入正式嵌入模型时，只需替换这个
     函数，下面的 ChromaDB 存储和查询逻辑都不需要修改。
@@ -138,7 +138,7 @@ def search_documents(query: str, limit: int = 3) -> tuple[list[dict[str, str]], 
         client = chromadb.PersistentClient(path=str(CHROMA_DIR))
         collection = client.get_or_create_collection(name="lab_knowledge")
         documents = load_documents()
-        # 检索前做一次轻量增量同步，课程知识库修改后无需重启服务。
+        # 检索前做一次轻量增量同步，知识库文件修改后无需重启服务。
         sync_collection(collection, documents)
 
         # 空知识库时直接返回，避免对空 collection 执行 n_results=1。
