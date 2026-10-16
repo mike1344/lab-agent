@@ -1,18 +1,8 @@
 # 智能实验室预约系统
 
-这是一个 Vue 3 + Element Plus + FastAPI + SQLAlchemy + MySQL 的前后端分离学习项目，已经覆盖课程第 08～27 节的主要业务链。
+这是一个 Vue 3 + Element Plus + FastAPI + SQLAlchemy + MySQL 的前后端分离项目，覆盖用户、实验室、设备、预约和 AI 助手等主要业务链。
 
 项目模块关系、预约时序和 AI 处理流程见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
-按第 00～27 节边学知识点、边看对应代码和逐句解析，请直接打开 [`docs/course/LEARN_WITH_CODE.md`](./docs/course/LEARN_WITH_CODE.md)。课程导航和速查提纲见 [`COURSE_STUDY_GUIDE.md`](./COURSE_STUDY_GUIDE.md)。
-
-学习材料按用途分为四套：
-
-| 文件 | 用途 |
-| --- | --- |
-| [`docs/course/LEARN_WITH_CODE.md`](./docs/course/LEARN_WITH_CODE.md) | **首次学习首选**：每个知识点后紧跟项目代码、解析和复现检查 |
-| [`docs/course/`](./docs/course/) 下四份分册 | 按 00–08 / 09–14 / 15–19 / 20–27 分组，每节「知识点清单 → 定位表 → 完整源码 → 验证」 |
-| [`docs/course/review-notes.md`](./docs/course/review-notes.md) | 学完后的纯概念复习：用来检查自己能否脱离代码讲清原理 |
-| [`docs/course/full-reference.md`](./docs/course/full-reference.md) | 上面四份合一，00–27 全在一个文件里，便于顺序通读和全文搜索 |
 
 ## 已实现功能
 
