@@ -1,0 +1,133 @@
+/* 统一盒模型，宽高包含内边距和边框 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 页面基础布局 */
+html {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* 全局字体和颜色 */
+body {
+  font-family: 'Microsoft YaHei', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #303133;
+  background-color: #f5f7fa;
+}
+
+/* 清除标题、段落的默认外边距 */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin: 0;
+}
+
+/* 清除列表默认样式 */
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 链接继承文字颜色 */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 表单元素使用全局字体 */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* 按钮鼠标样式 */
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* 文本域允许纵向调整大小 */
+textarea {
+  resize: vertical;
+}
+
+/* 图片适应容器 */
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* 合并表格边框 */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+/* 业务页面共用的白色内容容器，避免每个页面重复编写相同样式。 */
+.page-container {
+  min-height: 100%;
+  padding: 22px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(31, 45, 61, 0.05);
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2d3d;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.empty-hint {
+  padding: 40px 0;
+  text-align: center;
+  color: #909399;
+}

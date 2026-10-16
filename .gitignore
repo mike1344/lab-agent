@@ -1,0 +1,29 @@
+# ===== Python 虚拟环境与缓存 =====
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 环境变量与密钥（千万不要提交）=====
+.env
+backend/.env
+
+# ===== 前端依赖与构建产物 =====
+node_modules/
+dist/
+
+# ===== 运行时数据：上传文件、向量库、本地数据库 =====
+backend/uploads/
+backend/chroma_db/
+*.db
+*.sqlite*
+
+# ===== IDE 与系统文件 =====
+.vscode/
+.idea/
+*.log
+Thumbs.db
+Desktop.ini

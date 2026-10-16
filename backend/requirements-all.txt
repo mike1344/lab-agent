@@ -1,0 +1,14 @@
+# 项目直接依赖。这里不锁死传递依赖版本，减少 Python 小版本升级时的冲突。
+fastapi>=0.141.1
+uvicorn[standard]>=0.53.0
+SQLAlchemy>=2.0.54
+PyMySQL>=1.2.0
+pydantic>=2.13.5
+pydantic-settings>=2.15.0
+email-validator>=2.3.0
+python-multipart>=0.0.32
+bcrypt>=5.0.0
+PyJWT>=2.13.0
+openai>=2.0.0
+langgraph>=1.0.0
+chromadb>=1.0.0
