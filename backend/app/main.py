@@ -17,8 +17,10 @@ from app.database import Base, engine
 from app.models import Announcement, BlackoutPeriod, Equipment, Lab, Notification, Repair, Reservation, User  # noqa: F401 - 注册 ORM 模型
 from app.api.upload import UPLOAD_DIR
 
-# 创建尚不存在的数据库表，数据库本身需要提前创建
-Base.metadata.create_all(bind=engine)
+# 开发便捷：启动时创建缺失的表（不会修改已有表结构）。
+# 生产环境可在 .env 设置 AUTO_CREATE_TABLES=false，表结构统一交给 Alembic 迁移管理。
+if settings.AUTO_CREATE_TABLES:
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 

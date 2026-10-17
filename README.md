@@ -62,6 +62,20 @@ python -m scripts.create_admin --username admin --email admin@example.com
 
 后端启动后可访问 `http://127.0.0.1:8000/docs` 查看并调试全部接口；`/health` 为服务探活接口（返回 `{"status": "ok"}`），部署后供监控系统使用。
 
+### 数据库表结构变更（Alembic）
+
+表结构统一由 Alembic 迁移管理（启动时的自动建表只负责"创建缺失的表"，不会修改已有表）：
+
+```powershell
+cd backend
+.\.venv\Scripts\alembic.exe upgrade head      # 全新数据库：执行迁移建全部表
+.\.venv\Scripts\alembic.exe stamp head        # 老库（表已由 create_all 建好）：只登记版本号，不动表数据
+.\.venv\Scripts\alembic.exe revision --autogenerate -m "变更说明"   # 改完 app/models 后：生成迁移并检查生成文件
+.\.venv\Scripts\alembic.exe upgrade head      # 再执行迁移完成升级
+```
+
+生产环境可在 `.env` 设置 `AUTO_CREATE_TABLES=false`，完全交给迁移管理。
+
 > **容易混淆的一点：** ApiPost 是“接口调试客户端”，不是后端服务器。
 > 必须先让上面的 `uvicorn` 命令保持运行，ApiPost 才能向 FastAPI 发送请求。
 

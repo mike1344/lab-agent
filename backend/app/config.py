@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     # 允许跨域的前端来源，多个用英文逗号分隔；部署时改成真实前端域名
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    # 开发便捷：启动时自动创建缺失的表；生产环境建议关闭，改由 Alembic 迁移管理表结构
+    AUTO_CREATE_TABLES: bool = True
     # AI 配置均为可选；不配置 Key 时系统使用本地知识库回答。
     OPENAI_API_KEY: str | None = None
     OPENAI_BASE_URL: str | None = None
