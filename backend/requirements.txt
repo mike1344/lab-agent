@@ -27,6 +27,7 @@ Mako==1.4.3
 markdown-it-py==4.2.0
 MarkupSafe==3.0.3
 mdurl==0.1.2
+openpyxl==3.1.5
 pycparser==3.0
 pydantic==2.13.5
 pydantic-extra-types==2.11.1

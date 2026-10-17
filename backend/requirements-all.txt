@@ -13,3 +13,4 @@ PyJWT>=2.13.0
 openai>=2.0.0
 langgraph>=1.0.0
 chromadb>=1.0.0
+openpyxl>=3.1.5
