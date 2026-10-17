@@ -60,7 +60,7 @@ uvicorn app.main:app --reload
 python -m scripts.create_admin --username admin --email admin@example.com
 ```
 
-后端启动后可访问 `http://127.0.0.1:8000/docs` 查看并调试全部接口。
+后端启动后可访问 `http://127.0.0.1:8000/docs` 查看并调试全部接口；`/health` 为服务探活接口（返回 `{"status": "ok"}`），部署后供监控系统使用。
 
 > **容易混淆的一点：** ApiPost 是“接口调试客户端”，不是后端服务器。
 > 必须先让上面的 `uvicorn` 命令保持运行，ApiPost 才能向 FastAPI 发送请求。

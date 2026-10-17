@@ -12,6 +12,7 @@ from app.common.exceptions import (
     http_exception_handler,
     validation_exception_handler,
 )
+from app.config import settings
 from app.database import Base, engine
 from app.models import Announcement, BlackoutPeriod, Equipment, Lab, Notification, Repair, Reservation, User  # noqa: F401 - 注册 ORM 模型
 from app.api.upload import UPLOAD_DIR
@@ -25,11 +26,9 @@ app = FastAPI()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
-# 配置跨域请求
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# 配置跨域请求：允许的前端来源从 .env 的 CORS_ORIGINS 读取（多个用英文逗号分隔），
+# 部署时修改配置即可，不需要改代码。
+origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,3 +64,9 @@ app.add_exception_handler(
 @app.get("/")
 def root():
     return {"message": "FastAPI工程正在运行中"}
+
+
+@app.get("/health")
+def health():
+    """部署探活接口：监控系统或负载均衡可定期请求它确认服务存活。"""
+    return {"status": "ok"}

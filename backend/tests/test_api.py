@@ -78,6 +78,12 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(response.json()["code"], 200)
         return {"Authorization": f"Bearer {response.json()['data']['token']}"}
 
+    def test_health_endpoint(self):
+        """部署探活：/health 必须返回 200 和 status=ok，供监控系统探测。"""
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
     def test_local_embedding_is_stable(self):
         """本地向量必须固定且归一化，否则同一问题每次检索结果会漂移。"""
         first_vector = build_local_embedding("实验室设备故障")
