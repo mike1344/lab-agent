@@ -1,0 +1,8 @@
+# 构建前端镜像时排除的内容
+node_modules/
+dist/
+.vscode/
+*.log
+
+# 开发环境变量不进构建上下文：生产接口地址由 Dockerfile 的 VITE_API_BASE_URL 构建参数控制
+.env.development

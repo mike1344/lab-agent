@@ -31,13 +31,15 @@ lab_agent/
 │  │  └─ utils/           # 密码和 JWT 工具
 │  ├─ scripts/            # 管理脚本
 │  └─ tests/              # 接口回归测试
-└─ fronted/
-   └─ src/
-      ├─ api/             # 按业务模块封装请求
-      ├─ layouts/         # 登录后的主框架
-      ├─ router/          # 页面路由与登录守卫
-      ├─ utils/           # axios、token 和用户状态
-      └─ views/           # 各业务页面
+├─ fronted/
+│  └─ src/
+│     ├─ api/             # 按业务模块封装请求
+│     ├─ layouts/         # 登录后的主框架
+│     ├─ router/          # 页面路由与登录守卫
+│     ├─ utils/           # axios、token 和用户状态
+│     └─ views/           # 各业务页面
+├─ docker-compose.yml     # Docker 一键部署入口（MySQL + 后端 + 前端）
+└─ DEPLOY.md              # 部署手册（架构、备份恢复、排障）
 ```
 
 ## 启动后端
@@ -109,6 +111,19 @@ npm run dev
 ```
 
 前端默认访问 `http://127.0.0.1:8000`。如果后端地址不同，请修改 `fronted/.env.development`。
+
+## Docker 一键部署（服务器 / 生产环境）
+
+一台装好 Docker 的机器上，三条命令拉起整套系统（MySQL + 后端 + 前端 + Nginx）：
+
+```bash
+cp .env.docker.example .env     # 修改里面的数据库密码与 JWT 密钥
+docker compose up -d --build    # 首次构建视网络情况需 5～20 分钟
+docker compose exec backend python -m scripts.create_admin --username admin --email admin@example.com
+```
+
+完成后浏览器打开 `http://服务器IP/`（本机试用为 `http://localhost/`）。
+架构说明、备份恢复、更新升级与排障手册见 [`DEPLOY.md`](./DEPLOY.md)。
 
 ## AI 助手配置
 

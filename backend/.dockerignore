@@ -1,0 +1,15 @@
+# 构建后端镜像时排除的内容（不会打进镜像，也不影响数据卷挂载）
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 密钥文件不进镜像：容器里通过 docker-compose 的环境变量注入配置
+.env
+
+# 运行时数据：上传图片与向量库通过数据卷持久化，不打进镜像
+uploads/
+chroma_db/
+*.log
