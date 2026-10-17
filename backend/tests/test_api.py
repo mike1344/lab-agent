@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 # 测试库只在系统临时目录中创建，不删除或覆盖项目内的同名文件。
@@ -23,7 +24,7 @@ from chromadb.api.client import SharedSystemClient
 
 from app.ai.knowledge import build_local_embedding
 from app.database import SessionLocal, engine
-from app.ai.agent import has_explicit_reservation_intent, local_tool_node
+from app.ai.agent import execute_tools_node, has_explicit_reservation_intent, local_tool_node
 from app.main import app
 from app.models.user import User
 from app.utils.password import hash_password
@@ -552,6 +553,251 @@ class ApiFlowTest(unittest.TestCase):
             yesterday = (date.today() - timedelta(days=1)).isoformat()
             past = recommend_lab(db, yesterday, "afternoon", 2)
             self.assertIn("已经过去", past)
+
+
+class _ScriptedChatClient:
+    """按脚本吐流的假模型客户端：每次 create 调用依次消费一段预置分片。
+
+    如果脚本被多调用一次，会直接抛断言错误——这正是回归“模型被重复调用”问题：
+    修复前一次问答会同时命中图内 agent 和图外 run_model_tools 两条路径。
+    """
+
+    def __init__(self, rounds):
+        self.rounds = list(rounds)
+        self.create_calls = 0
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    def _create(self, **kwargs):
+        self.create_calls += 1
+        if not self.rounds:
+            raise AssertionError("模型调用次数超出脚本预期：说明存在重复调用路径")
+        return iter(self.rounds.pop(0))
+
+
+def _content_round(text, chunk_size=4):
+    """构造一轮纯文本流式返回。"""
+    return [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(content=text[index : index + chunk_size], tool_calls=None)
+                )
+            ]
+        )
+        for index in range(0, len(text), chunk_size)
+    ]
+
+
+def _tool_call_round(name, arguments, call_id="call_1"):
+    """构造一轮工具调用返回：首片带 id 和名称，后续片增量下发参数。"""
+    return [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id=call_id,
+                                function=SimpleNamespace(name=name, arguments=""),
+                            )
+                        ],
+                    )
+                )
+            ]
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id=None,
+                                function=SimpleNamespace(name=None, arguments=arguments),
+                            )
+                        ],
+                    )
+                )
+            ]
+        ),
+    ]
+
+
+class AiStreamConvergenceTest(unittest.TestCase):
+    """回归：工具事件与回答 token 必须只来自图内一条路径。
+
+    背景：修复前模型工具调用在图内 agent 和图外 run_model_tools 各执行一遍，
+    模型被调用三次、写工具可能被重复执行。现在统一为图内单一路径。
+    本类字母序先于 ApiFlowTest 执行且共享同一临时数据库：收尾时只清理自己的
+    Chroma 索引目录，共享数据库文件留给 ApiFlowTest 统一删除。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.chroma_directory = tempfile.TemporaryDirectory(prefix="lab_agent_chroma_sse_test_")
+        cls.chroma_patch = patch("app.ai.knowledge.CHROMA_DIR", Path(cls.chroma_directory.name))
+        cls.chroma_patch.start()
+        registered = cls.client.post(
+            "/api/auth/register",
+            json={
+                "username": "sse_user",
+                "password": "Sse123456",
+                "email": "sse-user@example.com",
+                "full_name": "流式回归用户",
+            },
+        )
+        if registered.json()["code"] != 200:
+            raise RuntimeError(f"测试用户注册失败：{registered.text}")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.chroma_patch.stop()
+        SharedSystemClient.clear_system_cache()
+        gc.collect()
+        cls.chroma_directory.cleanup()
+
+    def login_sse_user(self) -> dict[str, str]:
+        response = self.client.post(
+            "/api/auth/login",
+            json={"username": "sse_user", "password": "Sse123456"},
+        )
+        self.assertEqual(response.json()["code"], 200)
+        return {"Authorization": f"Bearer {response.json()['data']['token']}"}
+
+    def test_keyed_graph_is_the_only_tool_path(self):
+        """有 Key 且需要一次工具调用：模型最多调 2 次、工具只执行 1 次、事件完整。"""
+        headers = self.login_sse_user()
+        chat_client = _ScriptedChatClient(
+            [
+                _tool_call_round("get_today", "{}"),
+                _content_round("今天是 2026 年 10 月 17 日。"),
+            ]
+        )
+        with (
+            patch("app.ai.agent.settings.OPENAI_API_KEY", "test-key"),
+            patch("app.ai.agent.OpenAI", return_value=chat_client),
+            patch("app.ai.agent.get_today", return_value="2026-10-17") as today_tool,
+            patch("app.api.ai.stream_answer") as fallback_answer,
+        ):
+            response = self.client.post(
+                "/api/ai/chat/stream",
+                headers=headers,
+                json={"message": "今天几号？", "history": []},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        text = response.text
+        # 修复前这里会变成 3 次模型调用、工具执行 2 次。
+        self.assertEqual(chat_client.create_calls, 2)
+        today_tool.assert_called_once()
+        # 工具事件来自图内透传：每个工具一对 start/end，标签可读。
+        self.assertEqual(text.count("event: tool_start"), 1)
+        self.assertEqual(text.count("event: tool_end"), 1)
+        self.assertIn("换算今天/明天日期", text)
+        # 回答 token 由图内流式产出，不再走第二段生成路径。
+        self.assertEqual(extract_streamed_tokens(text), "今天是 2026 年 10 月 17 日。")
+        fallback_answer.assert_not_called()
+        self.assertIn("event: done", text)
+        # “已调用”汇总出现在回答 token 之前，保持旧版展示顺序。
+        self.assertLess(text.index("已调用："), text.index("event: token"))
+
+    def test_keyed_graph_answers_without_tools_in_one_call(self):
+        """有 Key 但不需要工具：一次模型调用完成回答，不出现任何工具事件。"""
+        headers = self.login_sse_user()
+        chat_client = _ScriptedChatClient([_content_round("实验室周一至周五开放。")])
+        with (
+            patch("app.ai.agent.settings.OPENAI_API_KEY", "test-key"),
+            patch("app.ai.agent.OpenAI", return_value=chat_client),
+            patch("app.api.ai.stream_answer") as fallback_answer,
+        ):
+            response = self.client.post(
+                "/api/ai/chat/stream",
+                headers=headers,
+                json={"message": "实验室什么时候开放？", "history": []},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(chat_client.create_calls, 1)
+        self.assertEqual(extract_streamed_tokens(response.text), "实验室周一至周五开放。")
+        fallback_answer.assert_not_called()
+        self.assertNotIn("event: tool_start", response.text)
+
+    def test_write_tool_runs_at_most_once_per_turn(self):
+        """同一轮对话里创建预约最多真正执行一次，重复调用只回提示。"""
+        events = []
+        arguments = json.dumps(
+            {
+                "lab_id": 1,
+                "reservation_date": "2099-01-01",
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "purpose": "设备调试",
+            },
+            ensure_ascii=False,
+        )
+        state = {
+            "message": "确认预约",
+            "user_id": 1,
+            "db": None,
+            "event_sink": events.append,
+            "messages": [
+                {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "create_lab_reservation", "arguments": arguments},
+                        }
+                    ],
+                }
+            ],
+        }
+        with patch("app.ai.agent.create_lab_reservation", return_value="预约创建成功") as create_tool:
+            first = execute_tools_node(state)
+            self.assertEqual(create_tool.call_count, 1)
+            self.assertTrue(first["write_tool_handled"])
+
+            second_state = {
+                **state,
+                **first,
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call_2",
+                                "type": "function",
+                                "function": {"name": "create_lab_reservation", "arguments": arguments},
+                            }
+                        ],
+                    }
+                ],
+            }
+            second = execute_tools_node(second_state)
+            self.assertEqual(create_tool.call_count, 1)
+            self.assertIn("已经处理过一次预约请求", second["messages"][-1]["content"])
+
+        self.assertEqual(
+            [event["type"] for event in events],
+            ["tool_start", "tool_end", "tool_start", "tool_end"],
+        )
+
+    def test_model_tool_path_stays_single_source(self):
+        """结构回归：重复的图外模型工具入口不得回流，端点也不再自建数据库会话。"""
+        import inspect
+
+        import app.ai.agent as agent_module
+        import app.api.ai as ai_api_module
+
+        self.assertFalse(hasattr(agent_module, "run_model_tools"))
+        api_source = inspect.getsource(ai_api_module)
+        self.assertNotIn("run_model_tools", api_source)
+        self.assertNotIn("SessionLocal", api_source)
 
 
 if __name__ == "__main__":

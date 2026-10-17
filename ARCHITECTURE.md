@@ -122,32 +122,28 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     Q[用户问题] --> SSE[POST /api/ai/chat/stream]
-    SSE --> G[LangGraph 状态图]
+    SSE --> G[LangGraph 状态图，后台线程运行]
     G --> R[retrieve 节点]
     R --> C[ChromaDB 向量检索]
     C -->|异常时| W[本地关键词检索]
     C --> X[知识上下文]
     W --> X
-    X --> A[agent 节点]
+    X --> A[agent 节点，唯一的模型调用入口]
     A -->|无 Key| L[local_tool_node 本地规则]
-    A -->|有 Key| M[Chat Completions 工具调用]
+    A -->|有 Key| M[模型流式调用]
     M -->|有 tool_calls| T[execute_tools_node 执行工具]
-    T --> A
-    A --> B[组合回答上下文]
-    L --> B
-    B --> K{是否配置 OpenAI API Key}
-    K -->|否| LOCAL[本地答案分片]
-    K -->|是| MODEL[模型流式回答]
-    LOCAL --> E[status / tool_start / tool_end / tool / token / done]
-    MODEL --> E
+    T --> M
+    G -->|图内事件实时透传| E[SSE 事件：status / tool_start / tool_end / tool / token / done]
+    L --> B[组合回答上下文]
+    B -->|图内没有产出回答时兜底| E
     E --> UI[Vue 实时展示过程和答案]
 ```
 
 这里有三层“可继续替换”的设计：
 
 1. `build_local_embedding()` 可替换为正式中文 Embedding 模型。
-2. `ai/tools.py` 的工具（共十个）可继续扩展；图内 `execute_tools_node` 与图外 `run_model_tools()` 都统一经 `_execute_tool` 分发。
-3. `stream_answer()` 已把本地回答与真实模型回答统一成流式迭代器，前端不需要区分实现。
+2. `ai/tools.py` 的工具（共十个）可继续扩展，统一经图内 `execute_tools_node` → `_execute_tool` 分发；有 Key 时模型工具调用只有这一条路径，`run_model_tools()` 这类图外重复入口已收敛删除。
+3. `agent_node` 直接流式输出最终回答，工具执行和回答 token 都通过 `event_sink` 实时透传给 SSE 端点；`stream_answer()` 只负责本地模式（无 Key）和兜底回答，前端不需要区分实现。
 
 ## 6. 功能模块与代码入口
 
