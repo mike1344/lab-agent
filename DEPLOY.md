@@ -150,6 +150,7 @@ docker run --rm -v lab_agent_uploads_data:/data -v "$PWD":/backup alpine sh -c '
 | 上传大图报 413 | 上传接口本身限 5MB；nginx 已放宽到 10MB。改过配置需同步 |
 | 时间显示不对 | 容器已统一东八区；再查宿主机 `date`（宿主机时间错，容器也会错） |
 | 构建很慢或失败 | 国内网络已默认清华 pip 源 + npmmirror npm 源；海外服务器可把两个 Dockerfile 里的 `PIP_INDEX` / `NPM_REGISTRY` 改回官方源 |
+| 构建报 `failed to fetch oauth token`、连 `auth.docker.io`/`docker.io` 超时 | 构建组件拉取基础镜像时直连 Docker Hub 被墙（国内常见）。先手动拉取再构建：`docker pull mysql:8.4 python:3.12-slim node:24-alpine nginx:stable-alpine`；Docker Desktop 用户还可在设置里配置代理 |
 | 想临时看接口文档 | 默认不对外反代 /docs；可 `docker compose exec backend curl -s http://127.0.0.1:8000/openapi.json`，或自行在 `fronted/nginx.conf` 加 location 转发 |
 | 日志出现 ChromaDB telemetry 相关提示 | 已通过 `ANONYMIZED_TELEMETRY=False` 关闭匿名上报；偶发残留提示可忽略 |
 
