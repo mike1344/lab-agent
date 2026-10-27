@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 # 测试库只在系统临时目录中创建，不删除或覆盖项目内的同名文件。
-TEST_DIRECTORY = tempfile.TemporaryDirectory(prefix="lab_agent_api_test_")
+TEST_DIRECTORY = tempfile.TemporaryDirectory(prefix="lab_agent_api_test_", ignore_cleanup_errors=True)
 TEST_DB = Path(TEST_DIRECTORY.name) / "test_lab_agent.db"
 
 # 必须在导入 app 之前覆盖数据库配置，因为 engine 会在导入阶段创建。
@@ -61,7 +61,7 @@ class ApiFlowTest(unittest.TestCase):
     def setUpClass(cls):
         cls.client = TestClient(app)
         # AI SSE 会调用真实 RAG；索引也放在临时目录，避免测试改动开发知识库。
-        cls.chroma_directory = tempfile.TemporaryDirectory(prefix="lab_agent_chroma_test_")
+        cls.chroma_directory = tempfile.TemporaryDirectory(prefix="lab_agent_chroma_test_", ignore_cleanup_errors=True)
         cls.chroma_patch = patch("app.ai.knowledge.CHROMA_DIR", Path(cls.chroma_directory.name))
         cls.chroma_patch.start()
         with SessionLocal() as db:
@@ -160,6 +160,12 @@ class ApiFlowTest(unittest.TestCase):
 
         # 4) 查询接口本身不写日志，且仅管理员可用
         self.assertEqual(self.client.get("/api/operation-logs", headers=student_headers).status_code, 403)
+        self.assertEqual(
+            self.client.get("/api/operation-logs/tool-calls", headers=student_headers).status_code,
+            403,
+        )
+        tool_calls = self.client.get("/api/operation-logs/tool-calls", headers=admin_headers).json()
+        self.assertEqual(tool_calls["code"], 200)
         res = self.client.get(
             "/api/operation-logs",
             headers=admin_headers,
@@ -2410,6 +2416,63 @@ class AiStreamConvergenceTest(unittest.TestCase):
             [event["type"] for event in events],
             ["tool_start", "tool_end", "tool_start", "tool_end"],
         )
+
+    def test_agent_write_tool_idempotency_and_audit(self):
+        """写工具：同一用户+工具+参数的重复请求只执行一次，并写入审计记录。"""
+        from app.models.agent_tool_log import AgentToolLog
+
+        arguments = json.dumps(
+            {
+                "lab_id": 1,
+                "reservation_date": "2099-01-02",
+                "start_time": "10:00:00",
+                "end_time": "11:00:00",
+                "purpose": "幂等测试",
+            },
+            ensure_ascii=False,
+        )
+        tool_calls = [
+            {
+                "id": "call_idem",
+                "type": "function",
+                "function": {"name": "create_lab_reservation", "arguments": arguments},
+            }
+        ]
+
+        with SessionLocal() as db:
+            # 本测试类先于 ApiFlowTest 执行，不能依赖 admin 已存在，这里自建用户
+            user = User(
+                username="idem_user",
+                password=hash_password("IdemUser123456"),
+                email="idem_user@example.com",
+                full_name="幂等测试用户",
+                is_active=True,
+                is_superuser=False,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            before = db.query(AgentToolLog).count()
+            state = {
+                "message": "确认预约",
+                "user_id": user.id,
+                "db": db,
+                "event_sink": [].append,
+                "messages": [{"role": "assistant", "tool_calls": tool_calls}],
+            }
+            with patch(
+                "app.ai.agent.create_lab_reservation",
+                return_value="✅ 预约成功！申请人：幂等测试用户，1条预约编号 1001，状态为待审核。",
+            ) as create_tool:
+                execute_tools_node(state)
+                execute_tools_node(state)  # 相同请求重放，应命中幂等键
+            self.assertEqual(create_tool.call_count, 1)
+
+            logs = db.query(AgentToolLog).filter(AgentToolLog.tool_name == "create_lab_reservation").all()
+            self.assertEqual(len(logs), 1)
+            self.assertTrue(logs[0].success)
+            self.assertIsNotNone(logs[0].idempotency_key)
+            self.assertEqual(db.query(AgentToolLog).count(), before + 1)
 
     def test_model_tool_path_stays_single_source(self):
         """结构回归：重复的图外模型工具入口不得回流，端点也不再自建数据库会话。"""

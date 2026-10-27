@@ -1,3 +1,4 @@
+from app.models.agent_tool_log import AgentToolLog
 from app.models.announcement import Announcement
 from app.models.announcement_comment import AnnouncementComment
 from app.models.announcement_read import AnnouncementRead
@@ -31,4 +32,5 @@ __all__ = [
     "BlackoutPeriod",
     "LoginLog",
     "OperationLog",
+    "AgentToolLog",
 ]

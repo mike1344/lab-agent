@@ -24,6 +24,13 @@ from app.ai.tools import (
 )
 from app.config import settings
 from app.database import SessionLocal
+from app.models.user import User
+from app.services.agent_audit import (
+    WRITE_TOOLS,
+    build_idempotency_key,
+    find_successful_call,
+    record_tool_call,
+)
 
 logger = logging.getLogger("lab_agent.ai")
 
@@ -191,6 +198,11 @@ TOOL_LABELS = {
 
 def _execute_tool(name: str, arguments: dict, db: Session, user_id: int, message: str) -> str:
     """执行单个工具，返回结果字符串。"""
+    if name in WRITE_TOOLS and db is not None:
+        # 服务端权限校验：写操作必须基于真实的当前用户，不能只依赖模型参数
+        user = db.get(User, user_id)
+        if user is None or not user.is_active:
+            return "当前账号不可用，无法执行写操作。"
     if name == "list_open_labs":
         return list_open_labs(db)
     if name == "search_lab_docs":
@@ -276,7 +288,11 @@ def agent_node(state: AgentState) -> AgentState:
     if not settings.OPENAI_API_KEY:
         return local_tool_node(state)
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+    client = OpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.OPENAI_BASE_URL,
+        timeout=settings.OPENAI_TIMEOUT_SECONDS,
+    )
     messages = state.get("messages") or [
         {"role": "system", "content": SYSTEM_PROMPT + _current_user_hint(state)},
         *(state.get("history") or [])[-10:],
@@ -360,14 +376,42 @@ def execute_tools_node(state: AgentState) -> AgentState:
             args = {}
         label = TOOL_LABELS.get(name, name)
         _emit_event(state, {"type": "tool_start", "name": name, "label": label})
+
+        # 写工具：用户+工具+参数 计算幂等键；已成功执行过的相同请求直接复用结果
+        idempotency_key = build_idempotency_key(state["user_id"], name, args) if name in WRITE_TOOLS else None
+        if idempotency_key and state.get("db") is not None:
+            previous = find_successful_call(state["db"], idempotency_key)
+            if previous is not None:
+                result = f"该请求已处理过，未重复执行。历史结果：{previous.result}"
+                tool_results.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+                _emit_event(state, {"type": "status", "message": "该请求此前已执行，未重复提交"})
+                _emit_event(state, {"type": "tool_end", "name": name, "label": label, "result": result})
+                continue
+
         if name == "create_lab_reservation" and write_tool_handled:
             result = "本轮已经处理过一次预约请求，没有重复创建。"
         else:
+            started_at = time.perf_counter()
             try:
                 result = _execute_tool(name, args, state["db"], state["user_id"], state["message"])
             except Exception as exc:  # noqa: BLE001 - 单个工具失败不应中断整轮对话
                 logger.exception("AI 工具 %s 执行失败", name)
                 result = f"工具 {name} 执行失败：{type(exc).__name__}"
+            duration_ms = int((time.perf_counter() - started_at) * 1000)
+            if name in WRITE_TOOLS and state.get("db") is not None:
+                success = result.startswith("✅ 预约成功") or "已取消" in result
+                record_tool_call(
+                    state["db"],
+                    user_id=state["user_id"],
+                    tool_name=name,
+                    arguments=args,
+                    result=result,
+                    success=success,
+                    duration_ms=duration_ms,
+                    # 只有成功的写操作才占用幂等键；失败/待确认尝试不占键，允许用户重试
+                    idempotency_key=idempotency_key if success else None,
+                    note="等待用户确认" if result.startswith("预约参数已识别") else "",
+                )
             if name == "create_lab_reservation":
                 write_tool_handled = True
         tool_results.append(
@@ -528,7 +572,11 @@ def stream_answer(message: str, history: list[dict[str, str]], context: str):
             yield answer[index : index + 12]
         return
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+    client = OpenAI(
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.OPENAI_BASE_URL,
+        timeout=settings.OPENAI_TIMEOUT_SECONDS,
+    )
     messages: list[dict[str, Any]] = [
         {
             "role": "system",

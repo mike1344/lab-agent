@@ -6,12 +6,44 @@ from sqlalchemy.orm import Session
 from app.common.response import Response
 from app.database import get_db
 from app.dependencies.permission import get_current_admin
+from app.models.agent_tool_log import AgentToolLog
 from app.models.operation_log import OperationLog
 from app.models.user import User
 from app.schemas.operation_log import OperationLogResponse
 from app.services.export import build_excel_response
 
 router = APIRouter(prefix="/operation-logs", tags=["操作日志"])
+
+
+@router.get("/tool-calls")
+def list_agent_tool_calls(
+    limit: int = Query(default=50, ge=1, le=200),
+    tool_name: str = "",
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """管理员查看 AI 写工具调用审计（创建/取消预约的入参、结果、耗时、幂等键）。"""
+    query = db.query(AgentToolLog)
+    if tool_name.strip():
+        query = query.filter(AgentToolLog.tool_name == tool_name.strip())
+    items = query.order_by(AgentToolLog.id.desc()).limit(limit).all()
+    return Response.success(
+        data=[
+            {
+                "id": item.id,
+                "user_id": item.user_id,
+                "tool_name": item.tool_name,
+                "arguments": item.arguments,
+                "result": item.result,
+                "success": item.success,
+                "duration_ms": item.duration_ms,
+                "idempotency_key": item.idempotency_key,
+                "note": item.note,
+                "create_time": item.create_time,
+            }
+            for item in items
+        ]
+    )
 
 
 @router.get("")
