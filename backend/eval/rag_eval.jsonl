@@ -1,0 +1,8 @@
+{"question": "预约实验室需要遵守哪些规则？", "expected_source": "lab_rules.md", "answerable": true}
+{"question": "预约的时间和已有预约重叠会怎样？", "expected_source": "lab_rules.md", "answerable": true}
+{"question": "预约后可以取消吗？", "expected_source": "lab_rules.md", "answerable": true}
+{"question": "设备故障了应该怎么处理？", "expected_source": "equipment_guide.md", "answerable": true}
+{"question": "使用设备前需要检查什么？", "expected_source": "equipment_guide.md", "answerable": true}
+{"question": "实验室可以养猫吗？", "answerable": false}
+{"question": "如何申请国家自然科学基金？", "answerable": false}
+{"question": "今天北京的天气怎么样？", "answerable": false}

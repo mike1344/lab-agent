@@ -155,9 +155,31 @@ docker compose exec backend python -m scripts.create_admin --username admin --em
 
 也可以分两轮对话：第一轮发送上面的完整参数，紧接着第二轮回复 `确认预约`。如果修改过预约参数，以最新一轮完整参数为准；如果说过“取消预约”或转去讨论其他问题，需要重新提供完整参数。后端只读取用户消息，并在当前轮检测到明确确认后才允许执行写入工具；同一轮最多执行一次创建操作。
 
-知识库内容位于 `backend/app/knowledge/`，新增 Markdown 文件后会在首次查询时写入 ChromaDB。
+## RAG 检索（可评估的部分）
 
-项目使用本地“字符 + 相邻双字符”哈希向量写入 ChromaDB，因此首次查询不需要再从网络下载嵌入模型。这个实现轻量、便于离线运行；正式项目可把 `build_local_embedding()` 替换成 OpenAI Embeddings 或其他中文向量模型。
+知识库位于 `backend/app/knowledge/`，支持 Markdown / 文本 / Word(.docx)，PDF 需可选依赖 `pypdf`。检索链路：
+
+1. **标题感知分块**：块元数据包含 `title / section / version / visibility`，管理员文档只对管理员可见；
+2. **混合召回**：向量相似度 + BM25（纯 Python，中文按字符与双字切词）按 `RAG_HYBRID_ALPHA` 加权；
+3. **可配置 Embedding**：默认 `local`（离线哈希，零依赖）；`bge` 可接 BGE 中文模型（需 `pip install sentence-transformers`）；`api` 可接 OpenAI 兼容 Embedding；
+4. **置信度与拒答**：结果带 `score / coverage`，低于 `RAG_MIN_SCORE` 或本地位面覆盖率不足时标记无证据，回答会明确说明资料不足；
+5. **可解释引用**：回答上下文带「来源：标题 § 章节｜相关度」，前端展示「参考来源」，SSE 也会下发 `sources` 事件；
+6. **增量同步**：按内容哈希增量写入 ChromaDB，新增/修改/删除文件都不需要清库。
+
+固定评估集与指标（`backend/eval/rag_eval.jsonl`，当前 local 向量、K=4）：
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\eval_rag.py
+```
+
+当前结果：Recall@4 = 1.0、MRR = 1.0、引用准确率 = 1.0、拒答率 = 0.67。
+拒答未到 1.0 的原因已定位：示例集中「实验室可以养猫吗」与知识库共享大量词面（实验室/可以），
+纯词面匹配无法判断语义不相关——这类样本需要语义型答案判定（BGE/API 向量或 LLM 判断），
+属于后续增强，不在当前结论里夸大。
+
+> 说明：默认 `local` 向量是「离线轻量检索」方案，适合无网络环境；要对外表述 RAG 能力时，
+> 建议切换 `RAG_PROVIDER=bge` 或 `api` 后重新跑评估集，用实际指标说话。
 
 ## 验证项目
 

@@ -37,6 +37,8 @@ jobs:
           OPENAI_API_KEY: ""
           SCHEDULER_ENABLED: "false"
         run: python -m unittest discover -s tests
+      - name: RAG 评估集（输出 Recall@K / MRR / 引用准确率 / 拒答率）
+        run: python scripts/eval_rag.py
 
   frontend:
     name: 前端（测试 + 构建）

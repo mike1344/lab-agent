@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     CLAMAV_REQUIRED: bool = False
     # 报表中心：机时单价（元/小时），0 表示只统计机时不算费用
     LAB_HOUR_RATE: float = 20.0
+    # RAG 检索：local（离线哈希向量）| bge（sentence-transformers）| api（OpenAI 兼容 Embedding）
+    RAG_PROVIDER: str = "local"
+    RAG_EMBEDDING_MODEL: str = "BAAI/bge-small-zh-v1.5"
+    RAG_TOP_K: int = 4
+    # 混合权重：向量占比，其余给 BM25
+    RAG_HYBRID_ALPHA: float = 0.6
+    # 最低置信度：低于该分数的证据会被丢弃，证据不足时上层可拒答
+    RAG_MIN_SCORE: float = 0.15
+    # 本地哈希向量是词面匹配：查询双字词覆盖率低于该值时视为无证据
+    RAG_MIN_COVERAGE: float = 0.15
+    RAG_RERANK_ENABLED: bool = True
     # AI 配置均为可选；不配置 Key 时系统使用本地知识库回答。
     OPENAI_API_KEY: str | None = None
     OPENAI_BASE_URL: str | None = None

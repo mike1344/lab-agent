@@ -113,7 +113,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 必须用 reactive 包一层：push 进数组的是原始对象时，直接改 content 不会触发
     // 依赖更新，页面要等 sending 变化才一次性刷新，流式输出会失效。
-    const assistantMessage = reactive({ role: 'assistant', content: '', events: [], done: false })
+    const assistantMessage = reactive({ role: 'assistant', content: '', events: [], sources: [], done: false })
     addMessage(assistantMessage)
 
     sending.value = true
@@ -128,6 +128,7 @@ export const useChatStore = defineStore('chat', () => {
           if (eventName === 'status' || eventName === 'tool') assistantMessage.events.push(data.message)
           if (eventName === 'tool_start') assistantMessage.events.push('正在' + data.label + '…')
           if (eventName === 'tool_end') assistantMessage.events.push('✓ ' + data.label + '完成')
+          if (eventName === 'sources') assistantMessage.sources = data.items || []
           if (eventName === 'error') assistantMessage.content = data.message
         },
         currentController.signal

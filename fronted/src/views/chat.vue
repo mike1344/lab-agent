@@ -24,6 +24,14 @@
           <div v-if="message.events?.length" class="process-events">
             <el-tag v-for="event in message.events" :key="event" size="small" effect="plain">{{ event }}</el-tag>
           </div>
+          <div v-if="message.sources?.length" class="sources">
+            <div class="sources-title">参考来源</div>
+            <div v-for="(source, index) in message.sources" :key="index" class="source-item">
+              {{ source.title || source.source }}
+              <span v-if="source.section"> § {{ source.section }}</span>
+              <span class="source-score">相关度 {{ source.score }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -103,6 +111,10 @@ const stopAnswer = () => {
 .message-bubble { padding: 13px 16px; border: 1px solid #e4e7ed; border-radius: 4px 14px 14px; background: #fff; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-row.user .message-bubble { border-color: #409eff; border-radius: 14px 4px 14px 14px; background: #409eff; color: #fff; }
 .process-events { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.sources { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #f8fafc; font-size: 12px; color: #606266; }
+.sources-title { margin-bottom: 4px; color: #909399; }
+.source-item { line-height: 1.7; }
+.source-score { margin-left: 6px; color: #b1b3b8; }
 .suggestions { display: flex; gap: 8px; overflow-x: auto; padding: 10px 18px; border-top: 1px solid #ebeef5; }
 .suggestions button { flex: none; padding: 7px 12px; border: 1px solid #dcdfe6; border-radius: 16px; background: #fff; color: #606266; }
 .suggestions button:hover { border-color: #409eff; color: #409eff; }

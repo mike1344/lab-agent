@@ -39,6 +39,7 @@ fi
 "$PY" -m ruff check .
 "$PY" -m ruff format --check .
 "$PY" -m unittest discover -s tests
+"$PY" scripts/eval_rag.py
 
 if [ "$SKIP_FRONTEND" -eq 0 ]; then
   echo "== 前端 =="

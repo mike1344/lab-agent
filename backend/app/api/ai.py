@@ -50,6 +50,24 @@ def chat_stream(data: ChatRequest, current_user: User = Depends(get_current_user
                 elif event_type == "graph_done":
                     final_state = event["state"]
 
+            # 命中知识库时把引用来源回传给前端展示（标题/章节/相关度）
+            retrieved_docs = final_state.get("retrieved_docs") or []
+            if retrieved_docs:
+                yield sse_event(
+                    "sources",
+                    {
+                        "items": [
+                            {
+                                "source": doc.get("source"),
+                                "title": doc.get("title"),
+                                "section": doc.get("section"),
+                                "score": doc.get("score"),
+                            }
+                            for doc in retrieved_docs
+                        ]
+                    },
+                )
+
             used_tools = list(final_state.get("used_tools", []))
             if model_tool_results:
                 used_tools.append("AI Tool Calling")
