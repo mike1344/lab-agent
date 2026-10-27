@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.common.exceptions import BusinessException
 from app.common.response import BizCode
 from app.models.blackout import BlackoutPeriod
+from app.models.course import Course
 from app.models.lab import Lab
 from app.models.reservation import Reservation
 from app.schemas.reservation import ReservationCreate
@@ -62,14 +63,34 @@ def check_slot_available(
         return f"{current_date}(时间冲突)"
 
     # blackout check
-    blackout = db.query(BlackoutPeriod).filter(
-        BlackoutPeriod.lab_id == lab_id,
-        BlackoutPeriod.blackout_date == current_date,
-        BlackoutPeriod.start_time < end_time,
-        BlackoutPeriod.end_time > start_time,
-    ).first()
+    blackout = (
+        db.query(BlackoutPeriod)
+        .filter(
+            BlackoutPeriod.lab_id == lab_id,
+            BlackoutPeriod.blackout_date == current_date,
+            BlackoutPeriod.start_time < end_time,
+            BlackoutPeriod.end_time > start_time,
+        )
+        .first()
+    )
     if blackout:
         return f"{current_date}({blackout.reason})"
+
+    # course check：课表按周重复占用实验室，与自由预约共用同一套重叠判定
+    course = (
+        db.query(Course)
+        .filter(
+            Course.lab_id == lab_id,
+            Course.weekday == current_date.isoweekday(),
+            Course.start_date <= current_date,
+            Course.end_date >= current_date,
+            Course.start_time < end_time,
+            Course.end_time > start_time,
+        )
+        .first()
+    )
+    if course:
+        return f"{current_date}(课程《{course.name}》占用)"
     return None
 
 
@@ -79,12 +100,7 @@ def create_reservation_record(
     data: ReservationCreate,
 ):
     """Create reservation (supports weekly repeat). Returns (created_list, skipped_list)."""
-    lab = (
-        db.query(Lab)
-        .filter(Lab.id == data.lab_id)
-        .with_for_update()
-        .first()
-    )
+    lab = db.query(Lab).filter(Lab.id == data.lab_id).with_for_update().first()
     if not lab or lab.status != 1:
         raise BusinessException(
             code=BizCode.BAD_REQUEST,
@@ -92,9 +108,8 @@ def create_reservation_record(
         )
 
     # single session duration limit
-    duration = (
-        datetime.combine(data.reservation_date, data.end_time)
-        - datetime.combine(data.reservation_date, data.start_time)
+    duration = datetime.combine(data.reservation_date, data.end_time) - datetime.combine(
+        data.reservation_date, data.start_time
     )
     if duration.total_seconds() > 4 * 3600:
         raise BusinessException(

@@ -8,6 +8,7 @@ from app.common.response import BizCode, Response
 from app.database import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.permission import get_current_admin
+from app.dependencies.signature import require_signature
 from app.models.user import User
 from app.schemas.user import (
     AdminUserCreate,
@@ -17,6 +18,7 @@ from app.schemas.user import (
     UserProfileUpdate,
     UserResponse,
 )
+from app.services.export import build_excel_response
 from app.utils.password import hash_password, verify_password
 
 router = APIRouter(prefix="/user", tags=["用户信息接口"])
@@ -91,12 +93,7 @@ def get_user_list(
         )
 
     total = query.count()
-    users = (
-        query.order_by(User.id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    users = query.order_by(User.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return Response.success(
         data={
             "list": [UserResponse.model_validate(user) for user in users],
@@ -104,6 +101,44 @@ def get_user_list(
             "page": page,
             "page_size": page_size,
         }
+    )
+
+
+@router.get("/export")
+def export_users(
+    keyword: str = "",
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """管理员导出用户列表（与用户管理筛选一致）。"""
+    query = db.query(User)
+    if keyword.strip():
+        search_value = f"%{keyword.strip()}%"
+        query = query.filter(
+            or_(
+                User.username.like(search_value),
+                User.full_name.like(search_value),
+                User.email.like(search_value),
+            )
+        )
+    users = query.order_by(User.id.asc()).all()
+    rows = [
+        [
+            user.id,
+            user.username,
+            user.full_name or "",
+            user.email,
+            "管理员" if user.is_superuser else ("教师" if user.is_teacher else "学生"),
+            "启用" if user.is_active else "禁用",
+            str(user.create_time),
+        ]
+        for user in users
+    ]
+    return build_excel_response(
+        sheet_title="用户列表",
+        headers=["ID", "用户名", "姓名", "邮箱", "角色", "状态", "创建时间"],
+        rows=rows,
+        filename_prefix="用户列表",
     )
 
 
@@ -186,6 +221,7 @@ def admin_reset_password(
 def delete_user(
     user_id: int,
     current_admin: User = Depends(get_current_admin),
+    _sig: User = Depends(require_signature),
     db: Session = Depends(get_db),
 ):
     """删除用户。已产生预约记录的用户应优先禁用，数据库会阻止误删。"""
