@@ -27,3 +27,6 @@ backend/chroma_db/
 *.log
 Thumbs.db
 Desktop.ini
+
+# 生成的示例数据 SQL（由 backend/scripts/generate_pku_seed.py 生成）
+backend/scripts/seed_pku_cs.sql

@@ -9,8 +9,15 @@ pydantic-settings>=2.15.0
 email-validator>=2.3.0
 python-multipart>=0.0.32
 bcrypt>=5.0.0
+# 登录图形验证码（图片生成依赖 Pillow，pip 自动带上）
+captcha>=0.7.1
 PyJWT>=2.13.0
 openai>=2.0.0
 langgraph>=1.0.0
 chromadb>=1.0.0
+APScheduler>=3.11
 openpyxl>=3.1.5
+# Prometheus 指标（/metrics）：QPS、延迟分位、状态码分布
+prometheus-fastapi-instrumentator>=8.1.0
+# 代码质量门禁（CI 与本地一致）：lint + import 排序 + 格式化
+ruff>=0.17.1

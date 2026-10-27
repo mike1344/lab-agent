@@ -1,10 +1,9 @@
 import logging
 
+from app.common.response import BizCode, Response
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-
-from app.common.response import Response, BizCode
 
 logger = logging.getLogger("lab_agent")
 
@@ -38,9 +37,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     """HTTP原生异常处理器"""
     return JSONResponse(
         status_code=exc.status_code,
-        content=Response.error(
-            code=exc.status_code, message=str(exc.detail)
-        ).model_dump(),
+        content=Response.error(code=exc.status_code, message=str(exc.detail)).model_dump(),
     )
 
 
@@ -63,7 +60,5 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         # 未知异常使用真实 500，方便日志平台和调用方触发告警或重试。
         status_code=int(BizCode.INTERNAL_ERROR),
-        content=Response.error(
-            code=BizCode.INTERNAL_ERROR, message="服务器开小差了，请稍后重试"
-        ).model_dump(),
+        content=Response.error(code=BizCode.INTERNAL_ERROR, message="服务器开小差了，请稍后重试").model_dump(),
     )

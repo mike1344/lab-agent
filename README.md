@@ -11,7 +11,25 @@
 - 管理员用户增删改查、角色和账号状态管理
 - 实验室与设备增删改查，学生端列表展示
 - 实验室预约、时间冲突校验、我的预约、取消预约、管理员审核
-- 首页角色化统计
+- 实验室周/日视图预约日历（占用总览、点空档直接预约）
+- 首页角色化统计 + ECharts 可视化（预约趋势、实验室使用排行、报修状态分布）
+- 定时任务：过期预约自动关闭、开课前站内提醒（APScheduler，可在 .env 关闭）
+- 通知实时推送：WebSocket 在线即达（审核结果、报修进度、预约提醒），掉线自动回到 30 秒轮询兜底
+- 登录安全：图形验证码（一次性消费，可在 .env 关闭）、连续失败锁定、登录日志审计查询
+- 操作日志审计：中间件自动记录所有写操作（操作人、接口、结果、IP、耗时），管理员可筛选查询
+- 设备操作说明：设备可绑定操作手册链接，详情弹窗内嵌预览（支持站内 PDF 与新窗口打开）
+- 公告互动：评论与一层回复、已读标记（列表未读提示）、管理员已读回执统计
+- 收藏：实验室/设备星标收藏，「只看收藏」快速筛选
+- 采购管理：申请 → 到货 → 验收状态机，验收自动入库（库存 +数量），已验收记录留痕不可删
+- 实验课程：教师建课（周几+时段+学期区间）、选课名单管理，课表与自由预约双向冲突校验
+- 多维导出：预约、设备台账、报修记录、用户列表四个 Excel 导出（统一封装、中文文件名不乱码）
+- 邮件通知：审核结果/开课提醒/报修进度同步发邮件（SMTP 未配置时自动降级为仅站内通知）
+- 认证增强：短效 access + 长效 refresh token，401 自动无感续期后重放请求
+- 可观测性：结构化日志（request_id 链路追踪）、Prometheus `/metrics`、Sentry（配 DSN 生效）、`/ready` 就绪探针
+- 接口限流：认证/AI/普通接口分级限流（内存固定窗口，超限 429）
+- 工程化：GitHub Actions CI（ruff 门禁 + 后端测试 + 前端构建 + 镜像构建）、dev/staging/prod 三套配置模板
+- 合规与安全：审计日志留存 180 天并支持导出、危险操作密码二次确认（电子签名）、上传文件可选 ClamAV 扫描
+- 报表与运维：机时/费用报表（按实验室+按用户，双工作表导出）、`scripts/backup.sh` 每日备份脚本与恢复演练流程
 - AI 助手：本地知识库、ChromaDB RAG、工具调用、LangGraph 编排、SSE 流式输出
 - 独立 SQLite 自动化测试，不污染开发 MySQL 数据
 
@@ -143,15 +161,25 @@ docker compose exec backend python -m scripts.create_admin --username admin --em
 
 ## 验证项目
 
-```powershell
-cd fronted
-npm run build
+一条命令完成「安装依赖 → ruff 门禁 → 后端回归测试 → 前端单测与构建」：
 
-cd ..\backend
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```powershell
+# Windows（仓库根目录）
+pwsh -File scripts\verify.ps1
 ```
 
-测试会覆盖注册登录、管理员权限、改密后旧 JWT 失效、实验室、设备、预约冲突、审核、取消、图片内容校验、AI SSE、多轮 AI 预约和 ChromaDB 索引同步。SQLite 数据库、ChromaDB 索引及测试上传文件均位于临时目录，不会连接开发 MySQL。
+```bash
+# Linux / macOS
+./scripts/verify.sh
+```
+
+常用参数：`-SkipInstall`（依赖已装好，只跑检查）、`-SkipFrontend`（只验后端；Linux 用 `--skip-frontend`）。
+
+依赖说明：
+
+- `backend/requirements.txt`：**当前可运行环境的完整锁定版本**（含 openai / chromadb / langgraph），新环境安装以它为准；
+- `backend/requirements-all.txt`：项目直接依赖的宽松版本（便于升级），Docker 镜像与 CI 之外的手动安装可用；
+- 后端测试使用独立 SQLite 与临时 ChromaDB，不连接开发 MySQL；前端单测使用 Node 内置 `node --test`（`fronted/tests/`），覆盖下载文件名解析与登录凭证存储工具。
 
 预约日期可以选择今天或未来，但当天的开始时间必须晚于服务器当前时间。管理员审核时也会重新检查预约时间和实验室开放状态。
 

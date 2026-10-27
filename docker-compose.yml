@@ -67,14 +67,20 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
+      # 智谱 4.5 系列可设 disabled 关闭思考；其他厂商留空即可
+      OPENAI_THINKING: ${OPENAI_THINKING:-}
       # Uvicorn 进程数：AI 流式长连接，2 个起步；低配机器（1核1G）改 1
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+      # 定时任务（过期预约关闭/开课前提醒）默认关闭：2 个 worker = 2 个进程各跑一份
+      # 调度器，会重复发通知。改为单进程部署（WEB_CONCURRENCY=1）时可显式设 true。
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-"false"}
     volumes:
       # 持久化：上传的图片 + 知识库向量索引，容器重建不丢
       - uploads_data:/app/uploads
       - chroma_data:/app/chroma_db
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      # 就绪探针：数据库可达才健康；不可达时容器会被标记 unhealthy，便于编排系统摘除
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ready"]
       interval: 10s
       timeout: 5s
       retries: 10
