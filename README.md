@@ -208,9 +208,10 @@ pwsh -File scripts\verify.ps1
 
 依赖说明：
 
-- `backend/requirements.txt`：**当前可运行环境的完整锁定版本**（含 openai / chromadb / langgraph），新环境安装以它为准；
+- `backend/requirements.txt`：**当前可运行环境的完整锁定版本**（含 openai / chromadb / langgraph / pypdf），新环境安装以它为准；
 - `backend/requirements-all.txt`：项目直接依赖的宽松版本（便于升级），Docker 镜像与 CI 之外的手动安装可用；
-- 后端测试使用独立 SQLite 与临时 ChromaDB，不连接开发 MySQL；前端单测使用 Node 内置 `node --test`（`fronted/tests/`），覆盖下载文件名解析与登录凭证存储工具。
+- 后端测试使用独立 SQLite 与临时 ChromaDB，不连接开发 MySQL；前端单测使用 Node 内置 `node --test`（`fronted/tests/`），覆盖下载文件名解析与登录凭证存储工具；
+- 一键验证还会执行 `scripts/check_migrations.py`（在临时 SQLite 上从零跑全部 Alembic 迁移并校验 17 张业务表），防止“测试用 create_all 建表、迁移脚本却写错”的问题漏到部署阶段。
 
 预约日期可以选择今天或未来，但当天的开始时间必须晚于服务器当前时间。管理员审核时也会重新检查预约时间和实验室开放状态。
 

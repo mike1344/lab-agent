@@ -154,6 +154,12 @@ class KnowledgeIndexSyncTest(unittest.TestCase):
         self.assertTrue(any(doc["source"] == "guide.docx" for doc in documents))
         self.assertTrue(any("检查电源" in doc["text"] for doc in documents))
 
+    def test_broken_pdf_is_skipped_without_crashing(self):
+        """损坏/非 PDF 文件不应让整库解析失败。"""
+        (self.knowledge_directory / "broken.pdf").write_bytes(b"%PDF-1.4 broken content")
+        documents = knowledge.load_documents()
+        self.assertTrue(all(doc["source"] != "broken.pdf" for doc in documents))
+
 
 if __name__ == "__main__":
     unittest.main()

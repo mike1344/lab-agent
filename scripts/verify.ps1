@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 # 一键验证：从空环境安装依赖 → lint → 后端回归测试 → 前端构建
 #
 # 用法（仓库根目录）：
@@ -43,6 +43,12 @@ Write-Host "ruff check / format"
 
 Write-Host "后端回归测试（独立 SQLite，不会连接开发 MySQL）"
 & $Python -m unittest discover -s tests
+
+Write-Host "Alembic 迁移校验（临时 SQLite，验证空库可建全量表）"
+& $Python scripts\check_migrations.py
+
+Write-Host "RAG 固定评估集（当前配置）"
+& $Python scripts\eval_rag.py
 
 if (-not $SkipFrontend) {
     Write-Host "== 前端 ==" -ForegroundColor Cyan

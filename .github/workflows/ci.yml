@@ -39,6 +39,8 @@ jobs:
         run: python -m unittest discover -s tests
       - name: RAG 评估集（输出 Recall@K / MRR / 引用准确率 / 拒答率）
         run: python scripts/eval_rag.py
+      - name: Alembic 迁移校验（临时 SQLite）
+        run: python scripts/check_migrations.py
 
   frontend:
     name: 前端（测试 + 构建）
