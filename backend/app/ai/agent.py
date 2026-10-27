@@ -1,10 +1,12 @@
 import json
+import logging
 import queue
 import re
 import threading
+import time
 from typing import Any, TypedDict
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from sqlalchemy.orm import Session
 
 from app.ai.knowledge import search_documents
@@ -22,6 +24,8 @@ from app.ai.tools import (
 )
 from app.config import settings
 from app.database import SessionLocal
+
+logger = logging.getLogger("lab_agent.ai")
 
 
 class AgentState(TypedDict, total=False):
@@ -82,16 +86,16 @@ def has_cancel_reservation_intent(message: str) -> bool:
     if normalized_message in {"取消", "撤销", "不要", "算了", "先不"}:
         return True
     return bool(
-        re.match(r"^(?:我|请|麻烦)?(?:现在|先)?(?:不要|别|不想|不需要|不用|无需|暂不|先不|取消|撤销)", normalized_message)
+        re.match(
+            r"^(?:我|请|麻烦)?(?:现在|先)?(?:不要|别|不想|不需要|不用|无需|暂不|先不|取消|撤销)", normalized_message
+        )
         and re.search(r"预约|创建|提交|确认", normalized_message)
     )
 
 
 def get_user_messages(state: AgentState) -> list[str]:
     user_messages = [
-        item["content"]
-        for item in state.get("history", [])
-        if item.get("role") == "user" and item.get("content")
+        item["content"] for item in state.get("history", []) if item.get("role") == "user" and item.get("content")
     ]
     return [*user_messages[-10:], state["message"]]
 
@@ -141,17 +145,19 @@ SYSTEM_PROMPT = (
     "5. 把选项列给用户选（比如'1号实验室14:00-16:00，2号实验室15:00-17:00'）\n"
     "6. 用户说'选1号'、'就这个'、'确认'后，直接调 create_lab_reservation，把 lab_id、日期、开始结束时间填好\n"
     "7. purpose 用途根据用户说的内容自动填，不要问用户\n"
-    "8. 创建成功后告诉用户预约编号和状态即可"
+    "8. 创建成功后告诉用户预约编号和状态即可\n"
+    "9. 只用纯文本回答：禁止使用 ** 加粗、# 标题、| 表格、` 代码块 等 Markdown 标记；"
+    "需要分点时用「1. 2. 3.」加换行，需要强调时用【】或直接陈述"
 )
 
-# 工具事件透传给前端时展示的可读名称。
+# 工具事件透传给前端时展示的可读名称（业务化措辞，不暴露模型内部推理）。
 TOOL_LABELS = {
-    "get_today": "换算今天/明天日期",
+    "get_today": "确认日期",
     "list_open_labs": "查询开放实验室",
-    "list_lab_equipments": "查询设备列表",
+    "list_lab_equipments": "查询设备",
     "search_lab_docs": "检索知识库",
-    "check_lab_availability": "查询实验室占用情况",
-    "recommend_lab": "智能推荐实验室",
+    "check_lab_availability": "查询占用时段",
+    "recommend_lab": "查找可用时段",
     "get_my_reservations": "查询我的预约",
     "cancel_reservation": "取消预约",
     "get_latest_announcements": "查询最新公告",
@@ -175,7 +181,12 @@ def _execute_tool(name: str, arguments: dict, db: Session, user_id: int, message
     if name == "get_latest_announcements":
         return get_latest_announcements(db)
     if name == "recommend_lab":
-        return recommend_lab(db, arguments["reservation_date"], arguments.get("period", "afternoon"), int(arguments.get("duration_hours", 2)))
+        return recommend_lab(
+            db,
+            arguments["reservation_date"],
+            arguments.get("period", "afternoon"),
+            int(arguments.get("duration_hours", 2)),
+        )
     if name == "get_today":
         return get_today()
     if name == "list_lab_equipments":
@@ -202,6 +213,29 @@ def _current_user_hint(state: AgentState) -> str:
     )
 
 
+def _extra_body() -> dict[str, Any] | None:
+    """按配置给模型请求追加参数（目前只用于关闭智谱的思考模式）。"""
+    thinking = (settings.OPENAI_THINKING or "").strip()
+    return {"thinking": {"type": thinking}} if thinking else None
+
+
+def _create_completion(client: OpenAI, **kwargs):
+    """调用模型，并对 429（免费模型访问量过大）做有限重试。
+
+    免费档的 Flash 模型在高峰时段经常返回 429，重试两次通常就能成功；
+    仍然失败时由调用方转成可读提示，而不是让整轮对话报“服务器开小差”。
+    """
+    last_error: RateLimitError | None = None
+    for attempt in range(3):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except RateLimitError as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+    raise last_error
+
+
 def agent_node(state: AgentState) -> AgentState:
     """图里的 agent 节点：流式调大模型，是唯一的模型调用入口。
 
@@ -220,13 +254,24 @@ def agent_node(state: AgentState) -> AgentState:
         {"role": "user", "content": state["message"]},
     ]
 
-    stream = client.chat.completions.create(
-        model=settings.OPENAI_MODEL,
-        messages=messages,
-        tools=TOOL_SCHEMAS,
-        tool_choice="auto",
-        stream=True,
-    )
+    try:
+        stream = _create_completion(
+            client,
+            model=settings.OPENAI_MODEL,
+            messages=messages,
+            tools=TOOL_SCHEMAS,
+            tool_choice="auto",
+            stream=True,
+            extra_body=_extra_body(),
+        )
+    except RateLimitError:
+        # 重试后仍然被限流：给用户一句能看懂的话，而不是让 SSE 抛异常。
+        busy_message = (
+            "模型当前访问量较大（429 限流），请等 10 秒左右再发一次。"
+            "如果频繁出现，可以把 .env 里的 OPENAI_MODEL 换成付费档（如 glm-4.7）。"
+        )
+        _emit_event(state, {"type": "token", "content": busy_message})
+        return {"final_answer": busy_message, "answer_streamed": True, "messages": messages}
 
     content_parts: list[str] = []
     # 流式分片里 tool_calls 按 index 增量下发，需要逐片拼回完整参数。
@@ -280,20 +325,35 @@ def execute_tools_node(state: AgentState) -> AgentState:
     tool_results = []
     for tc in last_assistant.get("tool_calls", []):
         name = tc["function"]["name"]
-        args = json.loads(tc["function"]["arguments"] or "{}")
+        try:
+            args = json.loads(tc["function"]["arguments"] or "{}")
+        except json.JSONDecodeError:
+            args = {}
         label = TOOL_LABELS.get(name, name)
         _emit_event(state, {"type": "tool_start", "name": name, "label": label})
         if name == "create_lab_reservation" and write_tool_handled:
             result = "本轮已经处理过一次预约请求，没有重复创建。"
         else:
-            result = _execute_tool(name, args, state["db"], state["user_id"], state["message"])
+            try:
+                result = _execute_tool(name, args, state["db"], state["user_id"], state["message"])
+            except Exception as exc:  # noqa: BLE001 - 单个工具失败不应中断整轮对话
+                logger.exception("AI 工具 %s 执行失败", name)
+                result = f"工具 {name} 执行失败：{type(exc).__name__}"
             if name == "create_lab_reservation":
                 write_tool_handled = True
-        tool_results.append({
-            "role": "tool",
-            "tool_call_id": tc["id"],
-            "content": result,
-        })
+        tool_results.append(
+            {
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": result,
+            }
+        )
+        # 把关键业务节点翻译成用户能理解的过程提示（不展示模型内部推理）
+        if name == "create_lab_reservation":
+            if result.startswith("预约参数已识别"):
+                _emit_event(state, {"type": "status", "message": "已整理预约参数，等待你确认后创建"})
+            elif result.startswith("✅ 预约成功"):
+                _emit_event(state, {"type": "status", "message": "预约创建成功"})
         _emit_event(state, {"type": "tool_end", "name": name, "label": label, "result": result})
 
     new_messages = messages + tool_results
@@ -386,11 +446,7 @@ def run_graph_stream(
         db = SessionLocal()
         try:
             final_state = run_graph(message, user_id, db, history, event_sink=events.put)
-            final_state = {
-                key: value
-                for key, value in final_state.items()
-                if key not in ("db", "event_sink")
-            }
+            final_state = {key: value for key, value in final_state.items() if key not in ("db", "event_sink")}
             events.put({"type": "graph_done", "state": final_state})
         except Exception as exc:
             events.put({"type": "graph_error", "error": exc})
@@ -434,10 +490,14 @@ def stream_answer(message: str, history: list[dict[str, str]], context: str):
 
     client = OpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": (
-            "你是实验室信息查询助手。根据知识库和工具结果准确、简洁地回答用户问题，"
-            "不要编造实验室、设备或预约状态。只回答用户提出的问题。"
-        )},
+        {
+            "role": "system",
+            "content": (
+                "你是实验室信息查询助手。根据知识库和工具结果准确、简洁地回答用户问题，"
+                "不要编造实验室、设备或预约状态。只回答用户提出的问题。"
+                "用纯文本回答，不要使用 ** 加粗、# 标题等 Markdown 标记。"
+            ),
+        },
         *history[-10:],
         {"role": "user", "content": f"用户问题：{message}\n\n{context}"},
     ]
@@ -445,6 +505,7 @@ def stream_answer(message: str, history: list[dict[str, str]], context: str):
         model=settings.OPENAI_MODEL,
         messages=messages,
         stream=True,
+        extra_body=_extra_body(),
     )
     for chunk in stream:
         delta = chunk.choices[0].delta.content

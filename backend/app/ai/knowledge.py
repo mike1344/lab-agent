@@ -3,7 +3,6 @@ import logging
 import math
 from pathlib import Path
 
-
 KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge"
 CHROMA_DIR = Path(__file__).resolve().parent.parent.parent / "chroma_db"
 logger = logging.getLogger(__name__)
@@ -23,11 +22,13 @@ def load_documents() -> list[dict[str, str]]:
         for i, para in enumerate(paragraphs):
             current += para + "\n\n"
             if len(current) >= 200 or i == len(paragraphs) - 1:
-                chunks.append({
-                    "id": f"{doc['id']}_chunk{len([c for c in chunks if c['id'].startswith(doc['id'])])}",
-                    "source": doc["source"],
-                    "text": current.strip(),
-                })
+                chunks.append(
+                    {
+                        "id": f"{doc['id']}_chunk{len([c for c in chunks if c['id'].startswith(doc['id'])])}",
+                        "source": doc["source"],
+                        "text": current.strip(),
+                    }
+                )
                 current = ""
     return chunks
 
@@ -97,8 +98,7 @@ def sync_collection(collection, documents: list[dict[str, str]]) -> None:
     # 旧版索引可能没有 content_hash，此时会被视为需要更新，
     # 从而自动完成索引格式迁移，不需要手动删除 chroma_db。
     indexed_metadata_by_id = {
-        document_id: (metadata or {})
-        for document_id, metadata in zip(indexed_ids, indexed_metadatas)
+        document_id: (metadata or {}) for document_id, metadata in zip(indexed_ids, indexed_metadatas)
     }
     local_document_by_id = {document["id"]: document for document in documents}
 
@@ -110,10 +110,7 @@ def sync_collection(collection, documents: list[dict[str, str]]) -> None:
     for document in documents:
         old_metadata = indexed_metadata_by_id.get(document["id"], {})
         current_hash = build_content_hash(document["text"])
-        if (
-            old_metadata.get("content_hash") != current_hash
-            or old_metadata.get("source") != document["source"]
-        ):
+        if old_metadata.get("content_hash") != current_hash or old_metadata.get("source") != document["source"]:
             changed_documents.append((document, current_hash))
 
     if changed_documents:
