@@ -7,6 +7,7 @@
     <div class="toolbar">
       <el-input v-model="keyword" clearable placeholder="搜索实验室名称" style="width: 240px" @keyup.enter="loadLabList" @clear="loadLabList" />
       <el-button @click="loadLabList">查询</el-button>
+      <el-checkbox v-model="favoriteOnly" @change="loadLabList">只看收藏</el-checkbox>
     </div>
 
     <el-table v-loading="loadingValue" :data="labList" stripe>
@@ -17,8 +18,21 @@
       <el-table-column label="状态" width="100">
         <template #default="scope"><el-tag :type="scope.row.status === 1 ? 'success' : 'info'">{{ scope.row.status === 1 ? '开放' : '暂停' }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="操作" :width="isAdmin ? 250 : 180" fixed="right">
+      <el-table-column label="收藏" width="76" align="center">
         <template #default="scope">
+          <el-button
+            link
+            :type="isFavorited(scope.row.id) ? 'warning' : 'info'"
+            :title="isFavorited(scope.row.id) ? '取消收藏' : '收藏'"
+            @click="toggleFavorite(scope.row)"
+          >
+            <el-icon :size="16"><StarFilled v-if="isFavorited(scope.row.id)" /><Star v-else /></el-icon>
+          </el-button>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" :width="isAdmin ? 320 : 240" fixed="right">
+        <template #default="scope">
+          <el-button link type="warning" @click="openCalendarDialog(scope.row)">查看周历</el-button>
           <el-button link type="primary" @click="showEquipment(scope.row)">查看设备</el-button>
           <template v-if="isAdmin">
             <el-button link type="primary" @click="openLabDialog(scope.row)">编辑</el-button>
@@ -106,6 +120,57 @@
       </el-form>
       <template #footer><el-button @click="reservationDialogVisible = false">取消</el-button><el-button type="primary" :loading="savingValue" :disabled="!!selectionConflict" @click="saveReservation">提交申请</el-button></template>
     </el-dialog>
+    <!-- 周/日视图预约日历弹窗 -->
+    <el-dialog v-model="calendarDialogVisible" :title="`预约日历：${calendarLab?.name || ''}`" width="980px" top="6vh">
+      <div class="cal-toolbar">
+        <el-button-group>
+          <el-button @click="calNav(-1)">上一{{ calendarView === 'week' ? '周' : '天' }}</el-button>
+          <el-button @click="calJumpToday">今天</el-button>
+          <el-button @click="calNav(1)">下一{{ calendarView === 'week' ? '周' : '天' }}</el-button>
+        </el-button-group>
+        <span class="cal-range">{{ calendarRangeLabel }}</span>
+        <el-radio-group v-model="calendarView" @change="loadCalendar">
+          <el-radio-button value="week">周视图</el-radio-button>
+          <el-radio-button value="day">日视图</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="cal-legend">
+        <span class="legend-item"><i class="cal-dot approved" />已通过</span>
+        <span class="legend-item"><i class="cal-dot pending" />待审核</span>
+        <span class="legend-item"><i class="cal-dot blackout" />不可约</span>
+        <span class="legend-hint">点击空白时段可直接发起预约</span>
+      </div>
+      <div v-loading="calendarLoading" class="cal-frame">
+        <div class="cal-head-row">
+          <div class="cal-gutter"></div>
+          <div v-for="day in displayDays" :key="day" class="cal-day-head" :class="{ today: day === calToday }">
+            {{ weekdayLabel(day) }}<br />{{ day.slice(5) }}
+          </div>
+        </div>
+        <div class="cal-body-row">
+          <div class="cal-gutter">
+            <div v-for="tick in hourTicks" :key="tick" class="cal-hour-label" :style="tickStyle(tick)">{{ minToLabel(tick) }}</div>
+          </div>
+          <div v-for="day in displayDays" :key="day" class="cal-day" @click="onEmptyClick($event, day)">
+            <div v-for="tick in hourTicks" :key="tick" class="cal-hour-line" :style="tickStyle(tick)"></div>
+            <div v-if="nowPercent !== null" class="cal-nowline" :style="{ top: nowPercent + '%' }"></div>
+            <div
+              v-for="block in dayBlocks(day)"
+              :key="block.key"
+              class="cal-block"
+              :class="block.kind"
+              :style="blockStyle(block)"
+              :title="blockTitle(block)"
+              @click.stop="onBlockClick(block)"
+            >
+              <div class="cal-block-time">{{ minToLabel(block.startMin) }} - {{ minToLabel(block.endMin) }}</div>
+              <div v-if="block.kind !== 'blackout'" class="cal-block-user">{{ block.info.user_name }}</div>
+              <div class="cal-block-purpose">{{ block.kind === 'blackout' ? block.info.reason : block.info.purpose }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -113,9 +178,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 import { createLabApi, deleteLabApi, getLabListApi, updateLabApi } from '@/api/lab'
-import { createReservationApi, getReservationSlotsApi } from '@/api/reservation'
+import { addFavoriteApi, deleteFavoriteApi, getFavoritesApi } from '@/api/favorite'
+import { createReservationApi, getReservationCalendarApi, getReservationSlotsApi } from '@/api/reservation'
 import { createBlackoutApi, deleteBlackoutApi, getBlackoutsApi } from '@/api/blackout'
+import { promptSignature } from '@/utils/confirm'
 import { useUser } from '@/utils/user'
 
 const router = useRouter()
@@ -124,6 +192,9 @@ const loadingValue = ref(false)
 const savingValue = ref(false)
 const keyword = ref('')
 const labList = ref([])
+// 收藏：favoriteMap 记录 target_id -> 收藏记录 id，用于切换收藏/取消收藏
+const favoriteOnly = ref(false)
+const favoriteMap = ref({})
 const labDialogVisible = ref(false)
 const reservationDialogVisible = ref(false)
 const labFormRef = ref(null)
@@ -275,6 +346,203 @@ const loadOccupiedSlots = async () => {
   }
 }
 
+// —— 周/日视图预约日历 ——
+// 日期工具：ISO 字符串（YYYY-MM-DD）可直接比较大小，跨天加减用 Date 换算。
+const formatDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const addDays = (dateStr, n) => {
+  const d = new Date(`${dateStr}T00:00:00`)
+  d.setDate(d.getDate() + n)
+  return formatDate(d)
+}
+// getDay() 周日=0；(getDay()+6)%7 把周一换算成 0，即可回退到本周周一。
+const mondayOf = (dateStr) => {
+  const d = new Date(`${dateStr}T00:00:00`)
+  d.setDate(d.getDate() - (d.getDay() + 6) % 7)
+  return formatDate(d)
+}
+const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const weekdayLabel = (dateStr) => weekdayNames[new Date(`${dateStr}T00:00:00`).getDay()]
+
+const calendarDialogVisible = ref(false)
+const calendarLab = ref(null)
+const calendarView = ref('week')
+const calendarLoading = ref(false)
+const calendarAnchor = ref(formatDate(new Date())) // 周视图锚点（所在周的任意一天）
+const calendarDay = ref(formatDate(new Date())) // 日视图当前查看的日期
+const calToday = ref(formatDate(new Date())) // 打开日历时定格“今天”，避免长时间停留后漂移
+const calendarReservations = ref([])
+const calendarBlackouts = ref([])
+const CAL_DEFAULT_START = 8 * 60 // 时间轴默认 08:00 起
+const CAL_DEFAULT_END = 22 * 60 // 22:00 止；有更早/更晚的占用会自动整点扩展
+
+const calendarRange = computed(() => {
+  if (calendarView.value === 'day') return { start: calendarDay.value, end: calendarDay.value }
+  const monday = mondayOf(calendarAnchor.value)
+  return { start: monday, end: addDays(monday, 6) }
+})
+const calendarRangeLabel = computed(() => `${calendarRange.value.start} ~ ${calendarRange.value.end}`)
+const displayDays = computed(() => {
+  const days = []
+  let cursor = calendarRange.value.start
+  while (cursor <= calendarRange.value.end) {
+    days.push(cursor)
+    cursor = addDays(cursor, 1)
+  }
+  return days
+})
+
+// 把后端返回的预约与不可约时段统一成“分钟区间”，附上所属日期。
+const calendarIntervals = computed(() => [
+  ...calendarReservations.value.map((r) => ({
+    kind: r.status, // pending / approved
+    date: r.reservation_date,
+    startMin: toMin(r.start_time.slice(0, 5)),
+    endMin: toMin(r.end_time.slice(0, 5)),
+    info: r,
+  })),
+  ...calendarBlackouts.value.map((b) => ({
+    kind: 'blackout',
+    date: b.blackout_date,
+    startMin: toMin(b.start_time.slice(0, 5)),
+    endMin: toMin(b.end_time.slice(0, 5)),
+    info: b,
+  })),
+])
+
+// 时间轴窗口：默认 8:00-22:00，被事件撑大时按整点扩展，保证所有块都能落进视图。
+const calendarWindow = computed(() => {
+  let startMin = CAL_DEFAULT_START
+  let endMin = CAL_DEFAULT_END
+  for (const it of calendarIntervals.value) {
+    startMin = Math.min(startMin, Math.floor(it.startMin / 60) * 60)
+    endMin = Math.max(endMin, Math.ceil(it.endMin / 60) * 60)
+  }
+  return { startMin, endMin, spanMin: endMin - startMin }
+})
+const hourTicks = computed(() => {
+  const ticks = []
+  for (let m = calendarWindow.value.startMin; m <= calendarWindow.value.endMin; m += 60) ticks.push(m)
+  return ticks
+})
+const tickStyle = (m) => ({ top: `${((m - calendarWindow.value.startMin) / calendarWindow.value.spanMin) * 100}%` })
+
+// 重叠区间分道：按开始时间排序，贪心放进第一条“上一段已结束”的竖道，
+// laneCount 决定每道宽度，使同一天的重叠预约并排显示而不是互相遮盖。
+const dayBlocks = (day) => {
+  const sorted = calendarIntervals.value
+    .filter((it) => it.date === day)
+    .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin)
+  const laneEnds = []
+  const withLane = sorted.map((it) => {
+    let lane = laneEnds.findIndex((end) => end <= it.startMin)
+    if (lane === -1) {
+      laneEnds.push(it.endMin)
+      lane = laneEnds.length - 1
+    } else {
+      laneEnds[lane] = it.endMin
+    }
+    return { ...it, lane }
+  })
+  return withLane.map((it, idx) => ({ key: `${it.kind}-${it.info.id}-${idx}`, ...it, laneCount: laneEnds.length }))
+}
+
+// 分钟 → 百分比定位：块的位置全部用百分比表达，时间轴伸缩时无需重算像素。
+const blockStyle = (block) => {
+  const { startMin, spanMin } = calendarWindow.value
+  const width = 100 / block.laneCount
+  return {
+    top: `${((block.startMin - startMin) / spanMin) * 100}%`,
+    height: `${((block.endMin - block.startMin) / spanMin) * 100}%`,
+    left: `calc(${block.lane * width}% + 2px)`,
+    width: `calc(${width}% - 4px)`,
+  }
+}
+
+// “现在”红线：仅当展示的日期包含今天、且当前时刻落在时间轴窗口内时显示。
+const nowPercent = computed(() => {
+  if (!displayDays.value.includes(calToday.value)) return null
+  const now = new Date()
+  const m = now.getHours() * 60 + now.getMinutes()
+  const { startMin, endMin } = calendarWindow.value
+  if (m < startMin || m > endMin) return null
+  return ((m - startMin) / (endMin - startMin)) * 100
+})
+
+const calStatusText = { pending: '待审核', approved: '已通过' }
+const blockTitle = (block) => {
+  if (block.kind === 'blackout') return `不可约：${block.info.reason}`
+  return `${block.info.user_name}｜${calStatusText[block.kind] || block.kind}｜${minToLabel(block.startMin)}-${minToLabel(block.endMin)}\n用途：${block.info.purpose || '-'}`
+}
+const onBlockClick = (block) => {
+  if (block.kind === 'blackout') {
+    ElMessage.warning(`该时段不可约：${block.info.reason}`)
+    return
+  }
+  ElMessage.info(`${block.info.user_name}（${calStatusText[block.kind]}）预约 ${block.date} ${minToLabel(block.startMin)}-${minToLabel(block.endMin)}：${block.info.purpose || '无用途说明'}`)
+}
+
+// 点击空白处反推时刻：纵向像素占比 × 时间轴跨度，向下取整到 30 分钟格。
+const onEmptyClick = (event, day) => {
+  const rect = event.currentTarget.getBoundingClientRect()
+  const { startMin, endMin, spanMin } = calendarWindow.value
+  const offsetMin = ((event.clientY - rect.top) / rect.height) * spanMin
+  const slotMin = Math.max(startMin, Math.min(startMin + Math.floor(offsetMin / 30) * 30, endMin - 30))
+  if (calendarLab.value.status !== 1) {
+    ElMessage.warning('该实验室暂停开放，暂不能预约')
+    return
+  }
+  const now = new Date()
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  if (day < calToday.value || (day === calToday.value && slotMin <= nowMin)) {
+    ElMessage.warning('不能预约已经过去的时段')
+    return
+  }
+  // 预填 1 小时的草稿时段，进入预约弹窗后仍可继续调整。
+  openReservationDialog(calendarLab.value, { date: day, timeRange: [minToTime(slotMin), minToTime(slotMin + 60)] })
+  calendarDialogVisible.value = false
+}
+
+const loadCalendar = async () => {
+  if (!calendarLab.value) return
+  calendarLoading.value = true
+  try {
+    const res = await getReservationCalendarApi({
+      lab_id: calendarLab.value.id,
+      start_date: calendarRange.value.start,
+      end_date: calendarRange.value.end,
+    })
+    calendarReservations.value = res.data.reservations || []
+    calendarBlackouts.value = res.data.blackouts || []
+  } finally {
+    calendarLoading.value = false
+  }
+}
+
+const openCalendarDialog = (lab) => {
+  calendarLab.value = lab
+  calToday.value = formatDate(new Date())
+  calendarAnchor.value = mondayOf(calToday.value)
+  calendarDay.value = calToday.value
+  calendarView.value = 'week'
+  calendarDialogVisible.value = true
+  loadCalendar()
+}
+
+const calNav = (direction) => {
+  if (calendarView.value === 'week') {
+    calendarAnchor.value = addDays(calendarAnchor.value, direction * 7)
+  } else {
+    calendarDay.value = addDays(calendarDay.value, direction)
+  }
+  loadCalendar()
+}
+const calJumpToday = () => {
+  calToday.value = formatDate(new Date())
+  calendarAnchor.value = mondayOf(calToday.value)
+  calendarDay.value = calToday.value
+  loadCalendar()
+}
+
 const labRules = {
   name: [{ required: true, message: '请输入实验室名称', trigger: 'blur' }],
   location: [{ required: true, message: '请输入实验室位置', trigger: 'blur' }],
@@ -289,9 +557,39 @@ const reservationRules = {
 const loadLabList = async () => {
   loadingValue.value = true
   try {
-    const res = await getLabListApi({ keyword: keyword.value, only_open: !isAdmin.value })
+    const res = await getLabListApi({
+      keyword: keyword.value,
+      only_open: !isAdmin.value,
+      favorite_only: favoriteOnly.value || undefined
+    })
     labList.value = res.data
   } finally { loadingValue.value = false }
+}
+
+// ===== 收藏（实验室）=====
+const loadFavorites = async () => {
+  try {
+    const res = await getFavoritesApi({ target_type: 'lab' })
+    const map = {}
+    for (const item of res.data || []) map[item.target_id] = item.id
+    favoriteMap.value = map
+  } catch {
+    favoriteMap.value = {}
+  }
+}
+
+const isFavorited = (labId) => Boolean(favoriteMap.value[labId])
+
+const toggleFavorite = async (lab) => {
+  const favoriteId = favoriteMap.value[lab.id]
+  if (favoriteId) {
+    await deleteFavoriteApi(favoriteId)
+    ElMessage.success('已取消收藏')
+  } else {
+    await addFavoriteApi({ target_type: 'lab', target_id: lab.id })
+    ElMessage.success('收藏成功')
+  }
+  await loadFavorites()
 }
 
 const openLabDialog = (lab = null) => {
@@ -314,13 +612,10 @@ const saveLab = async () => {
 }
 
 const removeLab = async (lab) => {
-  try {
-    await ElMessageBox.confirm(`确定删除“${lab.name}”吗？`, '删除确认', { type: 'warning' })
-  } catch {
-    // 取消确认框属于正常分支，不应继续删除，也不向 Vue 抛出未处理异常。
-    return
-  }
-  await deleteLabApi(lab.id)
+  // 危险操作：输入当前登录密码二次确认（电子签名），操作日志会记录本次删除
+  const password = await promptSignature(`确定删除实验室“${lab.name}”吗？此操作需要输入当前账号密码确认。`)
+  if (password === null) return
+  await deleteLabApi(lab.id, { signature_password: password })
   ElMessage.success('删除成功')
   await loadLabList()
 }
@@ -359,11 +654,16 @@ const removeBlackout = async (item) => {
   blackoutList.value = res.data
 }
 
-const openReservationDialog = (lab) => {
+const openReservationDialog = (lab, prefill = null) => {
   selectedLab.value = lab
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  Object.assign(reservationForm, { reservation_date: todayStr, timeRange: [], purpose: '', repeat_weeks: 1 })
+  Object.assign(reservationForm, {
+    reservation_date: prefill?.date || todayStr,
+    timeRange: prefill ? prefill.timeRange : [],
+    purpose: '',
+    repeat_weeks: 1
+  })
   gridStartIndex.value = null
   reservationDialogVisible.value = true
   loadOccupiedSlots()
@@ -388,7 +688,10 @@ const saveReservation = async () => {
   } finally { savingValue.value = false }
 }
 
-onMounted(loadLabList)
+onMounted(() => {
+  loadLabList()
+  loadFavorites()
+})
 </script>
 
 <style scoped>
@@ -455,4 +758,45 @@ onMounted(loadLabList)
 .slot-conflict { margin-top: 8px; font-size: 12px; color: #f56c6c; }
 .slot-ok { margin-top: 8px; font-size: 12px; color: #67c23a; }
 .slot-hint { margin-top: 8px; font-size: 12px; color: #909399; }
+
+/* —— 周/日视图日历 —— */
+.cal-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.cal-range { font-size: 14px; font-weight: 600; color: #303133; }
+.cal-legend { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #606266; margin-bottom: 8px; }
+.cal-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 4px; }
+.cal-dot.approved { background: #d1edc4; }
+.cal-dot.pending { background: #faecd8; }
+.cal-dot.blackout { background: #c8c9cc; }
+.legend-hint { margin-left: auto; color: #909399; }
+
+.cal-frame { border: 1px solid #ebeef5; border-radius: 8px; overflow: hidden; }
+.cal-head-row, .cal-body-row { display: flex; }
+.cal-gutter { width: 56px; flex: none; position: relative; }
+.cal-day-head {
+  flex: 1; text-align: center; padding: 6px 0;
+  font-size: 13px; font-weight: 600; color: #303133;
+  background: #f5f7fa; border-left: 1px solid #ebeef5; line-height: 1.5;
+}
+.cal-day-head.today { color: #409eff; background: #ecf5ff; }
+.cal-body-row { height: 540px; }
+.cal-hour-label {
+  position: absolute; right: 8px; transform: translateY(-50%);
+  font-size: 11px; color: #909399; pointer-events: none;
+}
+.cal-day { flex: 1; position: relative; border-left: 1px solid #ebeef5; cursor: pointer; }
+.cal-day:hover { background: #fafcff; }
+.cal-hour-line { position: absolute; left: 0; right: 0; border-top: 1px dashed #f0f2f5; pointer-events: none; }
+.cal-nowline { position: absolute; left: 0; right: 0; border-top: 2px solid #f56c6c; z-index: 3; pointer-events: none; }
+
+.cal-block {
+  position: absolute; z-index: 2; border-radius: 6px;
+  padding: 3px 6px; font-size: 12px; line-height: 1.3;
+  overflow: hidden; border: 1px solid transparent;
+}
+.cal-block.approved { background: #f0f9eb; border-color: #b3e19d; color: #529b2e; cursor: pointer; }
+.cal-block.pending { background: #fdf6ec; border-color: #f3d19e; color: #b88230; cursor: pointer; }
+.cal-block.blackout { background: #e9e9eb; border-color: #c8c9cc; color: #606266; cursor: not-allowed; }
+.cal-block-time { font-weight: 600; }
+.cal-block-user, .cal-block-purpose { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-block-purpose { opacity: 0.85; }
 </style>

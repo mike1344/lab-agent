@@ -5,14 +5,22 @@
         <h1>AI 实验室助手</h1>
         <p>支持知识库问答、实验室/设备查询和智能预约</p>
       </div>
-      <el-tag type="success" effect="plain">SSE 流式输出</el-tag>
+      <div class="header-actions">
+        <el-button size="small" @click="clearChat">清空对话</el-button>
+        <el-tag type="success" effect="plain">SSE 流式输出</el-tag>
+      </div>
     </header>
 
     <main ref="messageContainer" class="message-container">
+      <!-- 上次回答在页面刷新时被中断：历史已恢复，可一键重新生成 -->
+      <div v-if="chatStore.interrupted" class="interrupt-banner">
+        <span>上一次回答在页面刷新时被中断，历史对话已恢复。</span>
+        <el-button link type="primary" @click="chatStore.retryInterrupted()">重新生成上一问</el-button>
+      </div>
       <div v-for="(message, index) in chatStore.messages" :key="index" :class="['message-row', message.role]">
         <el-avatar :size="36">{{ message.role === 'user' ? '我' : 'AI' }}</el-avatar>
         <div class="message-content">
-          <div class="message-bubble">{{ message.content || '正在思考…' }}</div>
+          <div class="message-bubble">{{ plainText(message.content) || '正在思考…' }}</div>
           <div v-if="message.events?.length" class="process-events">
             <el-tag v-for="event in message.events" :key="event" size="small" effect="plain">{{ event }}</el-tag>
           </div>
@@ -33,12 +41,26 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useChatStore } from '@/store/chat'
 
 const inputValue = ref('')
 const messageContainer = ref(null)
 const chatStore = useChatStore()
+
+// 挂载时兜底恢复：内存里只剩欢迎语、但本地有历史时还原（刷新/重开页面后由这里恢复）
+onMounted(() => {
+  chatStore.restore()
+  scrollToBottom()
+})
+
+const clearChat = () => {
+  chatStore.clearMessages()
+  inputValue.value = ''
+}
+
+// 模型偶尔仍会输出 Markdown 加粗，这里做一层兜底，避免界面直接显示星号。
+const plainText = (text) => (text || '').replace(/\*\*/g, '')
 
 const suggestions = [
   '当前有哪些开放的实验室和设备？',
@@ -72,7 +94,9 @@ const stopAnswer = () => {
 .chat-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid #ebeef5; }
 .chat-header h1 { font-size: 20px; }
 .chat-header p { margin-top: 5px; color: #909399; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
 .message-container { overflow-y: auto; padding: 24px; background: #f8fafc; }
+.interrupt-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 10px 14px; border: 1px solid #faecd8; border-radius: 8px; background: #fdf6ec; font-size: 13px; color: #b88230; }
 .message-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
 .message-row.user { flex-direction: row-reverse; }
 .message-content { max-width: min(720px, 78%); }

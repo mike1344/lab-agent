@@ -13,6 +13,7 @@
         <el-option v-for="lab in labList" :key="lab.id" :label="lab.name" :value="lab.id" />
       </el-select>
       <el-button @click="loadList">刷新</el-button>
+      <el-button v-if="isAdmin" @click="exportRepairs">导出</el-button>
     </div>
 
     <el-table v-loading="loadingValue" :data="list" stripe>
@@ -95,7 +96,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getLabListApi } from '@/api/lab'
 import { getEquipmentListApi } from '@/api/equipment'
-import { createRepairApi, getMyRepairListApi, getRepairListApi, handleRepairApi } from '@/api/repair'
+import { createRepairApi, exportRepairsApi, getMyRepairListApi, getRepairListApi, handleRepairApi } from '@/api/repair'
+import { downloadBlobResponse } from '@/utils/download'
 import { useUser } from '@/utils/user'
 
 const { isAdmin } = useUser()
@@ -198,6 +200,14 @@ const submitHandle = async () => {
 const viewDetail = (row) => {
   detail.value = row
   detailVisible.value = true
+}
+
+const exportRepairs = async () => {
+  const res = await exportRepairsApi({
+    status: statusValue.value || undefined,
+    lab_id: selectedLabId.value || undefined
+  })
+  downloadBlobResponse(res, '报修记录.xlsx')
 }
 
 onMounted(async () => {

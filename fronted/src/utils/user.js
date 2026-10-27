@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { getUserInfo, logout, setToken, setUserInfo } from './auth'
+import { getUserInfo, logout, setRefreshToken, setToken, setUserInfo } from './auth'
 
 // 放在 useUser 外部，使所有组件拿到的是同一个响应式用户对象。
 const userInfo = ref(getUserInfo())
@@ -12,6 +12,8 @@ export function useUser() {
 
   function saveLoginData(data) {
     setToken(data.token)
+    // 长效刷新令牌用于 access token 过期后的无感续期
+    if (data.refresh_token) setRefreshToken(data.refresh_token)
     updateUser(data.user)
   }
 

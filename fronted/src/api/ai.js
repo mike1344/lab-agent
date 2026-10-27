@@ -1,7 +1,9 @@
 import router from '@/router'
 import { getToken, logout } from '@/utils/auth'
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+// 同源部署时 VITE_API_BASE_URL 是 "/"，直接拼会得到 "//api/..."（浏览器会当成主机名 "api"）。
+// 统一去掉结尾斜杠后再拼接，保证得到 "/api/..."。
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
 export async function streamChatApi(data, onEvent, signal) {
   // 浏览器中的 axios 不能像 fetch 一样逐块读取响应体，因此 SSE POST 使用 fetch。
