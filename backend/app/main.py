@@ -23,6 +23,7 @@ from app.middleware.operation_log import operation_log_middleware
 from app.middleware.rate_limit import rate_limit_middleware
 from app.middleware.request_id import configure_logging, request_id_middleware
 from app.models import (  # noqa: F401 - 注册 ORM 模型
+    AgentToolLog,
     Announcement,
     AnnouncementComment,
     AnnouncementRead,
