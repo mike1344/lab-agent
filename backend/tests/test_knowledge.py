@@ -11,9 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import chromadb
-from chromadb.api.client import SharedSystemClient
-
 from app.ai import knowledge
+from chromadb.api.client import SharedSystemClient
 
 
 class KnowledgeIndexSyncTest(unittest.TestCase):
@@ -52,9 +51,7 @@ class KnowledgeIndexSyncTest(unittest.TestCase):
         result = collection.get(include=["documents", "metadatas"])
         return {
             document_id: {"text": text, "metadata": metadata}
-            for document_id, text, metadata in zip(
-                result["ids"], result["documents"], result["metadatas"]
-            )
+            for document_id, text, metadata in zip(result["ids"], result["documents"], result["metadatas"])
         }
 
     def test_markdown_add_update_and_delete_are_synchronized(self):
