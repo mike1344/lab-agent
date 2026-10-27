@@ -3,12 +3,19 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
+    // Element Plus 按需引入：模板里的 el-* 组件与 ElMessage 等 API 自动注册/导入，
+    // 不再整包 import。样式仍使用全局 index.css，避免按需样式带来的视觉回归。
+    AutoImport({ resolvers: [ElementPlusResolver({ importStyle: false })], dts: false }),
+    Components({ resolvers: [ElementPlusResolver({ importStyle: false })], dts: false }),
   ],
   resolve: {
     alias: {
@@ -16,9 +23,7 @@ export default defineConfig({
     },
   },
   build: {
-    // Element Plus 为全量引入（约 1.1MB / gzip 350KB），单独成块便于浏览器长期缓存。
-    // 彻底减小需要改为按需引入（unplugin-vue-components），属后续优化项。
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 900,
     rollupOptions: {
       output: {
         manualChunks(id) {

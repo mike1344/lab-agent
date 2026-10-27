@@ -58,6 +58,8 @@ if (-not $SkipFrontend) {
     }
     npm test
     npm run build
+    Write-Host "图标导入守卫（模板图标必须显式 import）"
+    & $Python (Join-Path $Backend "scripts\check_icon_imports.py")
 }
 
 Write-Host "全部检查通过 ✅" -ForegroundColor Green

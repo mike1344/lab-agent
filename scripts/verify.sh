@@ -48,6 +48,7 @@ if [ "$SKIP_FRONTEND" -eq 0 ]; then
   [ "$SKIP_INSTALL" -eq 0 ] && npm ci
   npm test
   npm run build
+  "$PY" "$ROOT/backend/scripts/check_icon_imports.py"
 fi
 
 echo "全部检查通过 ✅"

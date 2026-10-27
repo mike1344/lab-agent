@@ -206,6 +206,13 @@ pwsh -File scripts\verify.ps1
 
 常用参数：`-SkipInstall`（依赖已装好，只跑检查）、`-SkipFrontend`（只验后端；Linux 用 `--skip-frontend`）。
 
+前端构建与体积现状：
+
+- Element Plus 已改为**按需引入**（`unplugin-vue-components` / `unplugin-auto-import`），`vendor-element` 从 1.13MB 降到 **635KB（gzip 204KB）**；
+- 图标不再全局注册，各页面显式 `import`；`backend/scripts/check_icon_imports.py` 作为守卫，新增模板图标未导入时验证会失败；
+- `v-loading` 指令显式注册（指令不走组件解析器），全局样式仍使用 `element-plus/dist/index.css`；
+- 当前网关（`api.agnes-ai.cn`）只有 chat/image/video 模型，**没有 Embedding 接口**（`scripts/probe_embedding.py` 可复测）；要上真实中文向量需本地安装 `sentence-transformers` 并设 `RAG_PROVIDER=bge`。
+
 依赖说明：
 
 - `backend/requirements.txt`：**当前可运行环境的完整锁定版本**（含 openai / chromadb / langgraph / pypdf），新环境安装以它为准；
