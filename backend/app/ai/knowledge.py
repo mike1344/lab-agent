@@ -4,11 +4,11 @@
 1. 支持 Markdown / 文本 / Word(.docx) / PDF（PDF 需可选依赖 pypdf）；
 2. 标题感知分块，块元数据包含 title / section / version / visibility；
 3. 可配置 Embedding：local（默认，离线哈希向量）、bge（sentence-transformers）、api（OpenAI 兼容接口）；
-4. 向量与 BM25 混合召回，按 RAG_HYBRID_ALPHA 加权；可选轻量重排（标题/章节命中加权）；
+4. 向量与 BM25 混合召回，按 RAG_HYBRID_ALPHA 加权；再用查询词覆盖率/向量相似度做证据过滤；
 5. 返回相似度分数并按 RAG_MIN_SCORE 过滤，证据不足时显式标记 ok=False（供拒答）；
 6. 按内容哈希增量同步 ChromaDB，文件新增/修改/删除都不需要清库。
 
-默认 local 向量保证离线可运行；企业/面试场景可切换 BGE 或 API Embedding。
+默认 local 向量保证离线可运行；对语义检索有要求时应切换 BGE 或 API Embedding。
 """
 
 import hashlib
