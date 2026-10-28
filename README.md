@@ -192,6 +192,28 @@ cd backend
 
 ## 验证项目
 
+### 本地可视化验收
+
+按需引入后建议本机跑一次真实浏览器渲染（截图落在 `docs/visual-check/`）：
+
+```powershell
+# 1) 后端（仅本地验收可临时关闭验证码）
+cd backend
+$env:LOGIN_CAPTCHA_ENABLED="false"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+
+# 2) 前端（用 5173，与 CORS 白名单一致）
+cd fronted
+npm run dev -- --port 5173
+
+# 3) 另开终端执行 Playwright 验收（用系统 Chrome，不下载浏览器）
+node scripts\visual-check.mjs
+```
+
+脚本依次验证：登录页、首页图表、实验室/设备表格、管理员审核弹窗、学生修改预约弹窗，
+并输出页面错误/失败请求；正常结果为 `no page errors captured`。
+
+
 一条命令完成「安装依赖 → ruff 门禁 → 后端回归测试 → 前端单测与构建」：
 
 ```powershell
