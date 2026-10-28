@@ -11,8 +11,13 @@
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+# 评估只需要知识库检索，不连数据库；CI 没有 backend/.env，这里补最小默认值。
+os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+os.environ.setdefault("JWT_SECRET_KEY", "rag-eval-only")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
