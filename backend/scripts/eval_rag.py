@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 # 评估只需要知识库检索，不连数据库；CI 没有 backend/.env，这里补最小默认值。
@@ -38,10 +39,23 @@ def evaluate(k: int, min_score: float) -> dict:
     reciprocal_ranks = []
     citation_hits = 0
     refused = 0
+    latencies: list[float] = []
     detail = []
 
+    # 预热：BGE 模型加载、Chroma collection 首次同步都是秒级一次性成本，
+    # 不应计入单题检索延迟；预热后再开始计时。
+    search_documents_with_meta("预热检索", limit=1, is_admin=True)
+    latencies.clear()
+
+    def timed_search(question: str):
+        """统一计一次检索耗时（包含向量化、Chroma/BM25 全链路）。"""
+        started = time.perf_counter()
+        result = search_documents_with_meta(question, limit=k, is_admin=True)
+        latencies.append((time.perf_counter() - started) * 1000)
+        return result
+
     for case in answerable:
-        result = search_documents_with_meta(case["question"], limit=k, is_admin=True)
+        result = timed_search(case["question"])
         sources = [item["source"] for item in result["items"]]
         expected = case["expected_source"]
         rank = sources.index(expected) + 1 if expected in sources else 0
@@ -60,7 +74,7 @@ def evaluate(k: int, min_score: float) -> dict:
         )
 
     for case in unanswerable:
-        result = search_documents_with_meta(case["question"], limit=k, is_admin=True)
+        result = timed_search(case["question"])
         if not result["ok"]:
             refused += 1
         detail.append(
@@ -72,6 +86,8 @@ def evaluate(k: int, min_score: float) -> dict:
             }
         )
 
+    sorted_latencies = sorted(latencies)
+    p95_index = min(len(sorted_latencies) - 1, int(len(sorted_latencies) * 0.95)) if sorted_latencies else 0
     return {
         "provider": embedding_provider(),
         "k": k,
@@ -79,6 +95,8 @@ def evaluate(k: int, min_score: float) -> dict:
         "min_coverage": settings.RAG_MIN_COVERAGE,
         "min_vector_score": settings.RAG_MIN_VECTOR_SCORE,
         "cases": len(cases),
+        "avg_retrieval_ms": round(sum(latencies) / len(latencies), 2) if latencies else 0.0,
+        "p95_retrieval_ms": round(sorted_latencies[p95_index], 2) if sorted_latencies else 0.0,
         f"recall@{k}": round(recall_hits / len(answerable), 4) if answerable else 0.0,
         "mrr": round(sum(reciprocal_ranks) / len(reciprocal_ranks), 4) if reciprocal_ranks else 0.0,
         "citation_accuracy": round(citation_hits / len(answerable), 4) if answerable else 0.0,

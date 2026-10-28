@@ -179,7 +179,7 @@ cd backend
 | `local`（默认，离线哈希） | 1.0 | 1.0 | 1.0 | 0.667 |
 | `bge`（bge-small-zh-v1.5） | 1.0 | 1.0 | 1.0 | **1.0** |
 
-默认 `local` 是离线轻量方案，纯词面匹配无法判断「实验室可以养猫吗」与知识库语义无关，所以拒答率为 0.667；这是已知取舍，不对外宣称高精度语义检索。
+默认 `local` 是离线轻量方案，纯词面匹配无法判断「实验室可以养猫吗」与知识库语义无关，所以拒答率为 0.667；这是已知取舍，不对外宣称高精度语义检索。完整方法、延迟与局限见 [docs/rag-evaluation.md](docs/rag-evaluation.md)。
 
 需要语义级拒答时，安装可选依赖并切换 BGE 后重跑评估：
 
@@ -267,6 +267,14 @@ powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 - 一键验证还会执行 `scripts/check_migrations.py`（在临时 SQLite 上从零跑全部 Alembic 迁移并校验 20 张业务表，连同 `alembic_version` 共 21 张），防止“测试用 create_all 建表、迁移脚本却写错”的问题漏到部署阶段。
 
 预约日期可以选择今天或未来，但当天的开始时间必须晚于服务器当前时间。管理员审核时也会重新检查预约时间和实验室开放状态。
+
+## 答辩 / 面试材料
+
+- [`docs/demo-guide.md`](docs/demo-guide.md)：8 分钟演示脚本、可用账号、演示前检查清单、截图索引；
+- [`docs/rag-evaluation.md`](docs/rag-evaluation.md)：RAG 评估方法、local/BGE 对照、检索延迟与局限；
+- [`docs/e2e-acceptance.md`](docs/e2e-acceptance.md)：浏览器 E2E（学生改约 → 教师审核 → 学生看到已通过）复现步骤；
+- [`docs/performance.md`](docs/performance.md)：只读接口压测结果（并发 1/10/20 的 QPS 与 P95/P99）；
+- `docs/visual-check/01`～`13`：真实浏览器截图证据。
 
 ## 推荐的代码阅读顺序
 
