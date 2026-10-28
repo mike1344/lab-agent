@@ -150,9 +150,8 @@ def approval_detail(db: Session, reservation: Reservation, user: User) -> dict:
             state = "approved" if decision.action == "approve" else "rejected"
         elif reservation.status == "pending" and step.step_order == current_order:
             state = "pending"
-        elif reservation.status == "rejected":
-            state = "skipped"
-        elif reservation.status == "approved":
+        elif reservation.status in ("rejected", "approved", "cancelled", "expired"):
+            # 流程已经终止或完成，未产生决策的节点不再显示为“待流转”。
             state = "skipped"
         else:
             state = "upcoming"

@@ -197,11 +197,14 @@ const approvalText = (row) => {
   const approval = row.approval
   if (row.status === 'approved') return `已完成 ${approval.total_steps} 级审批`
   if (row.status === 'rejected') return '审批未通过'
+  if (row.status === 'cancelled') return '审批已取消'
+  if (row.status === 'expired') return '审批已终止'
   return `第 ${approval.current_step}/${approval.total_steps} 步 · ${approval.current_step_name}`
 }
 const approvalTagType = (row) => {
   if (row.status === 'approved') return 'success'
   if (row.status === 'rejected') return 'danger'
+  if (row.status === 'cancelled' || row.status === 'expired') return 'info'
   return 'warning'
 }
 const stepTimelineType = (state) => ({
