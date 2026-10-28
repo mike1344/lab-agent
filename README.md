@@ -214,6 +214,18 @@ node scripts\visual-check.mjs
 脚本依次验证：登录页、首页图表、实验室/设备表格、管理员审核弹窗、学生修改预约弹窗，
 并输出页面错误/失败请求；正常结果为 `no page errors captured`。
 
+审批流配置与预约审批进度页可不依赖后端做离线渲染验收（脚本会拦截 `/api/*` 返回固定数据）：
+
+```powershell
+cd fronted
+npm run build
+npm run preview -- --port 5175          # 另开一个终端保持运行
+$env:BASE_URL="http://127.0.0.1:5175"   # Linux/macOS 用 BASE_URL=... node ...
+node scripts\approval-visual-check.mjs
+```
+
+对应截图：`docs/visual-check/07-approval-flow.png` ～ `10-approval-progress.png`。
+
 
 一条命令完成「安装依赖 → ruff 门禁 → 后端回归测试 → 前端单测与构建」：
 
