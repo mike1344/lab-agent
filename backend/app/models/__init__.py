@@ -2,6 +2,7 @@ from app.models.agent_tool_log import AgentToolLog
 from app.models.announcement import Announcement
 from app.models.announcement_comment import AnnouncementComment
 from app.models.announcement_read import AnnouncementRead
+from app.models.approval import ApprovalFlow, ApprovalStep, ReservationApproval
 from app.models.blackout import BlackoutPeriod
 from app.models.course import Course, CourseEnrollment
 from app.models.equipment import Equipment
@@ -33,4 +34,7 @@ __all__ = [
     "LoginLog",
     "OperationLog",
     "AgentToolLog",
+    "ApprovalFlow",
+    "ApprovalStep",
+    "ReservationApproval",
 ]

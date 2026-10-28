@@ -97,6 +97,10 @@
             <el-icon><TrendCharts /></el-icon>
             <span>报表中心</span>
           </el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/approval">
+            <el-icon><Connection /></el-icon>
+            <span>审批流配置</span>
+          </el-menu-item>
           <el-menu-item v-if="isAdmin" index="/oplog">
             <el-icon><Document /></el-icon>
             <span>操作日志</span>
@@ -129,6 +133,7 @@ import {
   Bell,
   Calendar,
   ChatDotRound,
+  Connection,
   DataBoard,
   Document,
   House,
@@ -192,7 +197,7 @@ function openNotificationDrawer() {
 
 // 按通知类型换算跳转页面；未知类型返回空串表示不跳转
 function jumpTargetByType(type) {
-  if (type === 'reservation_result' || type === 'reservation_reminder') return '/reservation'
+  if (type === 'reservation_result' || type === 'reservation_reminder' || type === 'approval_pending') return '/reservation'
   if (type === 'repair_result') return '/repair'
   return ''
 }

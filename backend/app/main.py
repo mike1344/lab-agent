@@ -27,6 +27,8 @@ from app.models import (  # noqa: F401 - 注册 ORM 模型
     Announcement,
     AnnouncementComment,
     AnnouncementRead,
+    ApprovalFlow,
+    ApprovalStep,
     BlackoutPeriod,
     Course,
     CourseEnrollment,
@@ -39,6 +41,7 @@ from app.models import (  # noqa: F401 - 注册 ORM 模型
     Procurement,
     Repair,
     Reservation,
+    ReservationApproval,
     User,
 )
 from app.services.observability import init_sentry, setup_metrics

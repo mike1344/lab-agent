@@ -617,6 +617,7 @@ class ApiFlowTest(unittest.TestCase):
         from unittest.mock import patch
 
         from app.config import settings
+        from app.models.agent_tool_log import AgentToolLog
         from app.models.login_log import LoginLog
         from app.models.operation_log import OperationLog
         from app.services.antivirus import scan_uploaded_file
@@ -654,12 +655,41 @@ class ApiFlowTest(unittest.TestCase):
                 )
             )
             db.add(LoginLog(username="audit_keep", success=True, message="新登录"))
+            admin_user = db.query(User).filter(User.username == "admin").first()
+            self.assertIsNotNone(admin_user)
+            db.add(
+                AgentToolLog(
+                    user_id=admin_user.id,
+                    tool_name="old_tool",
+                    arguments="{}",
+                    result="",
+                    success=True,
+                    duration_ms=1,
+                    idempotency_key="audit-old-tool-key",
+                    note="过期工具调用",
+                    create_time=old_time,
+                )
+            )
+            db.add(
+                AgentToolLog(
+                    user_id=admin_user.id,
+                    tool_name="new_tool",
+                    arguments="{}",
+                    result="",
+                    success=True,
+                    duration_ms=1,
+                    idempotency_key="audit-new-tool-key",
+                    note="保留期内工具调用",
+                )
+            )
             db.commit()
             deleted = purge_expired_audit_logs(db)
-            self.assertGreaterEqual(deleted, 2)
+            self.assertGreaterEqual(deleted, 3)
             self.assertEqual(db.query(OperationLog).filter(OperationLog.username == "audit_old").count(), 0)
             self.assertEqual(db.query(LoginLog).filter(LoginLog.username == "audit_old").count(), 0)
             self.assertEqual(db.query(OperationLog).filter(OperationLog.username == "audit_keep").count(), 1)
+            self.assertEqual(db.query(AgentToolLog).filter(AgentToolLog.tool_name == "old_tool").count(), 0)
+            self.assertEqual(db.query(AgentToolLog).filter(AgentToolLog.tool_name == "new_tool").count(), 1)
 
         # 2) 电子签名：危险操作需要当前账号密码；错误/缺失都拒绝，正确才放行
         admin_headers = self.login("admin", "Admin123456")
@@ -2187,6 +2217,342 @@ class ApiFlowTest(unittest.TestCase):
             yesterday = (date.today() - timedelta(days=1)).isoformat()
             past = recommend_lab(db, yesterday, "afternoon", 2)
             self.assertIn("已经过去", past)
+
+    def test_approval_flow_multi_step_and_reset_on_edit(self):
+        """多级审批：按节点流转、当前节点权限、驳回、改约重走与流程配置约束。"""
+        from app.models.notification import Notification
+        from app.models.reservation import Reservation
+
+        admin_headers = self.login("admin", "Admin123456")
+        lab = self.client.post(
+            "/api/labs",
+            headers=admin_headers,
+            json={"name": "多级审批测试实验室", "location": "实训楼 901", "capacity": 10},
+        ).json()["data"]
+        lab_id = lab["id"]
+
+        def create_teacher(username: str) -> int:
+            response = self.client.post(
+                "/api/user",
+                headers=admin_headers,
+                json={
+                    "username": username,
+                    "password": "Teacher123456",
+                    "email": f"{username}@example.com",
+                    "is_teacher": True,
+                },
+            ).json()
+            self.assertEqual(response["code"], 200)
+            return response["data"]["id"]
+
+        teacher_a_id = create_teacher("flow_teacher_a")
+        create_teacher("flow_teacher_b")
+        teacher_a_headers = self.login("flow_teacher_a", "Teacher123456")
+        teacher_b_headers = self.login("flow_teacher_b", "Teacher123456")
+
+        self.assertEqual(
+            self.client.post(
+                "/api/auth/register",
+                json={
+                    "username": "flow_student",
+                    "password": "FlowStu123456",
+                    "email": "flow_student@example.com",
+                },
+            ).json()["code"],
+            200,
+        )
+        student_headers = self.login("flow_student", "FlowStu123456")
+
+        flow_payload = {
+            "name": "重点实验室两级审批",
+            "description": "导师初审后由管理员终审",
+            "enabled": True,
+            "steps": [
+                {
+                    "name": "导师初审",
+                    "approver_type": "user",
+                    "approver_id": teacher_a_id,
+                },
+                {
+                    "name": "管理员终审",
+                    "approver_type": "role",
+                    "approver_role": "admin",
+                },
+            ],
+        }
+        saved = self.client.put(f"/api/approval-flows/{lab_id}", headers=admin_headers, json=flow_payload).json()
+        self.assertEqual(saved["code"], 200)
+        self.assertEqual(saved["data"]["lab_name"], "多级审批测试实验室")
+        self.assertEqual([step["label"] for step in saved["data"]["steps"]], ["导师初审", "管理员终审"])
+        flow_id = saved["data"]["id"]
+
+        # 审批流配置是管理员能力；普通用户不能查看/修改
+        self.assertEqual(self.client.get("/api/approval-flows", headers=student_headers).status_code, 403)
+        self.assertEqual(
+            self.client.put(f"/api/approval-flows/{lab_id}", headers=teacher_a_headers, json=flow_payload).status_code,
+            403,
+        )
+        invalid_steps = {**flow_payload, "steps": []}
+        self.assertEqual(
+            self.client.put(f"/api/approval-flows/{lab_id}", headers=admin_headers, json=invalid_steps).status_code,
+            400,
+        )
+
+        today = date.today()
+        first_date = today + timedelta(days=7)
+        created = self.client.post(
+            "/api/reservations",
+            headers=student_headers,
+            json={
+                "lab_id": lab_id,
+                "reservation_date": first_date.isoformat(),
+                "start_time": "09:00:00",
+                "end_time": "10:00:00",
+                "purpose": "多级审批第一单",
+            },
+        ).json()
+        self.assertEqual(created["code"], 200)
+        reservation_id = created["data"][0]["id"]
+        approval = created["data"][0]["approval"]
+        self.assertEqual(approval["current_step"], 1)
+        self.assertEqual(approval["total_steps"], 2)
+        self.assertEqual(approval["current_step_name"], "导师初审")
+        self.assertFalse(approval["can_review"])
+        self.assertTrue(approval["is_requester"])
+        self.assertFalse(created["data"][0]["can_review"])
+
+        # 已有进行中的预约时，不允许删除流程或调整节点
+        self.assertEqual(
+            self.client.delete(f"/api/approval-flows/{flow_id}", headers=admin_headers).status_code,
+            400,
+        )
+        changed_payload = {
+            **flow_payload,
+            "steps": [
+                {"name": "导师初审", "approver_type": "role", "approver_role": "teacher"},
+                {"name": "管理员终审", "approver_type": "role", "approver_role": "admin"},
+            ],
+        }
+        self.assertEqual(
+            self.client.put(f"/api/approval-flows/{lab_id}", headers=admin_headers, json=changed_payload).status_code,
+            400,
+        )
+
+        # 非当前节点审批人（同为教师）不能处理
+        teacher_b_list = self.client.get(
+            "/api/reservations", headers=teacher_b_headers, params={"pending_for_me": "true"}
+        ).json()["data"]
+        self.assertFalse(any(item["id"] == reservation_id for item in teacher_b_list))
+        self.assertEqual(
+            self.client.put(
+                f"/api/reservations/{reservation_id}/review",
+                headers=teacher_b_headers,
+                json={"status": "approved", "review_comment": "越权"},
+            ).status_code,
+            403,
+        )
+
+        # 第一节点通过后仍是待审核，第二节点由管理员处理
+        teacher_a_all = self.client.get("/api/reservations", headers=teacher_a_headers).json()["data"]
+        teacher_a_row = next(item for item in teacher_a_all if item["id"] == reservation_id)
+        self.assertTrue(teacher_a_row["can_review"])
+        first_approved = self.client.put(
+            f"/api/reservations/{reservation_id}/review",
+            headers=teacher_a_headers,
+            json={"status": "approved", "review_comment": "同意使用"},
+        )
+        self.assertEqual(first_approved.status_code, 200)
+        self.assertIn("管理员终审", first_approved.json()["message"])
+        teacher_a_rows = self.client.get(
+            "/api/reservations", headers=teacher_a_headers, params={"pending_for_me": "true"}
+        ).json()["data"]
+        self.assertFalse(any(item["id"] == reservation_id for item in teacher_a_rows))
+
+        admin_rows = self.client.get(
+            "/api/reservations", headers=admin_headers, params={"pending_for_me": "true"}
+        ).json()["data"]
+        admin_row = next(item for item in admin_rows if item["id"] == reservation_id)
+        self.assertEqual(admin_row["status"], "pending")
+        self.assertEqual(admin_row["approval"]["current_step"], 2)
+        self.assertTrue(admin_row["approval"]["can_review"])
+
+        with SessionLocal() as db:
+            pending_notifications = (
+                db.query(Notification)
+                .filter(
+                    Notification.type == "approval_pending",
+                    Notification.related_id == reservation_id,
+                    Notification.title == "待审批预约",
+                )
+                .all()
+            )
+            self.assertTrue(pending_notifications)
+
+        final_approved = self.client.put(
+            f"/api/reservations/{reservation_id}/review",
+            headers=admin_headers,
+            json={"status": "approved", "review_comment": "准予使用"},
+        )
+        self.assertEqual(final_approved.status_code, 200)
+        self.assertIn("审核完成", final_approved.json()["message"])
+        self.assertEqual(
+            self.client.put(
+                f"/api/reservations/{reservation_id}/review",
+                headers=admin_headers,
+                json={"status": "approved"},
+            ).status_code,
+            400,
+        )
+
+        # 审批进度详情：申请人可看节点与轨迹，其他学生不可见
+        detail = self.client.get(f"/api/reservations/{reservation_id}/approval", headers=student_headers).json()
+        self.assertEqual(detail["code"], 200)
+        self.assertEqual([step["state"] for step in detail["data"]["steps"]], ["approved", "approved"])
+        self.assertEqual(len(detail["data"]["decisions"]), 2)
+        self.assertEqual(detail["data"]["decisions"][0]["approver_name"], "flow_teacher_a")
+        self.assertFalse(detail["data"]["can_review"])
+
+        self.client.post(
+            "/api/auth/register",
+            json={
+                "username": "flow_other_student",
+                "password": "FlowStu123456",
+                "email": "flow_other_student@example.com",
+            },
+        )
+        other_headers = self.login("flow_other_student", "FlowStu123456")
+        self.assertEqual(
+            self.client.get(f"/api/reservations/{reservation_id}/approval", headers=other_headers).status_code,
+            403,
+        )
+
+        # 驳回路径：首节点拒绝即结束，未走到的第二节点标记为跳过
+        second_date = today + timedelta(days=14)
+        rejected = self.client.post(
+            "/api/reservations",
+            headers=student_headers,
+            json={
+                "lab_id": lab_id,
+                "reservation_date": second_date.isoformat(),
+                "start_time": "09:00:00",
+                "end_time": "10:00:00",
+                "purpose": "多级审批驳回单",
+            },
+        ).json()["data"][0]
+        rejected_id = rejected["id"]
+        rejected_result = self.client.put(
+            f"/api/reservations/{rejected_id}/review",
+            headers=teacher_a_headers,
+            json={"status": "rejected", "review_comment": "用途不明确"},
+        )
+        self.assertEqual(rejected_result.status_code, 200)
+        self.assertIn("流程结束", rejected_result.json()["message"])
+        rejected_detail = self.client.get(f"/api/reservations/{rejected_id}/approval", headers=student_headers).json()
+        self.assertEqual(rejected_detail["data"]["steps"][0]["state"], "rejected")
+        self.assertEqual(rejected_detail["data"]["steps"][1]["state"], "skipped")
+
+        # 首节点通过后学生改约：已产生的审批作废，从首节点重新开始
+        third_date = today + timedelta(days=21)
+        edited = self.client.post(
+            "/api/reservations",
+            headers=student_headers,
+            json={
+                "lab_id": lab_id,
+                "reservation_date": third_date.isoformat(),
+                "start_time": "09:00:00",
+                "end_time": "10:00:00",
+                "purpose": "可修改的预约",
+            },
+        ).json()["data"][0]
+        edited_id = edited["id"]
+        self.assertEqual(
+            self.client.put(
+                f"/api/reservations/{edited_id}/review",
+                headers=teacher_a_headers,
+                json={"status": "approved", "review_comment": "初审通过"},
+            ).status_code,
+            200,
+        )
+        updated = self.client.put(
+            f"/api/reservations/{edited_id}",
+            headers=student_headers,
+            json={"purpose": "改约后的用途", "start_time": "10:00:00", "end_time": "11:00:00"},
+        ).json()
+        self.assertEqual(updated["code"], 200)
+        self.assertIn("重新开始", updated["message"])
+        self.assertEqual(updated["data"]["approval"]["current_step"], 1)
+        reset_detail = self.client.get(f"/api/reservations/{edited_id}/approval", headers=student_headers).json()
+        self.assertEqual(reset_detail["data"]["decisions"], [])
+        self.assertEqual(reset_detail["data"]["steps"][0]["state"], "pending")
+
+        # 停用后新预约不再进入流程；历史预约仍保留流程快照且不能删除流程
+        disabled_payload = {**flow_payload, "enabled": False}
+        disabled = self.client.put(f"/api/approval-flows/{lab_id}", headers=admin_headers, json=disabled_payload).json()
+        self.assertEqual(disabled["code"], 200)
+        self.assertFalse(disabled["data"]["enabled"])
+        fourth_date = today + timedelta(days=28)
+        plain = self.client.post(
+            "/api/reservations",
+            headers=student_headers,
+            json={
+                "lab_id": lab_id,
+                "reservation_date": fourth_date.isoformat(),
+                "start_time": "09:00:00",
+                "end_time": "10:00:00",
+                "purpose": "停用流程后的普通预约",
+            },
+        ).json()["data"][0]
+        self.assertIsNone(plain["approval"])
+        self.assertFalse(plain["can_review"])
+        plain_row = next(
+            item
+            for item in self.client.get("/api/reservations", headers=admin_headers).json()["data"]
+            if item["id"] == plain["id"]
+        )
+        self.assertTrue(plain_row["can_review"])
+        self.assertEqual(
+            self.client.delete(f"/api/approval-flows/{flow_id}", headers=admin_headers).status_code,
+            400,
+        )
+
+        # 未被任何预约使用的新流程可以正常删除
+        spare_lab_id = self.client.post(
+            "/api/labs",
+            headers=admin_headers,
+            json={"name": "可删除流程实验室", "location": "实训楼 902", "capacity": 5},
+        ).json()["data"]["id"]
+        spare = self.client.put(
+            f"/api/approval-flows/{spare_lab_id}",
+            headers=admin_headers,
+            json={
+                "name": "备用流程",
+                "steps": [{"name": "管理员审核", "approver_type": "role", "approver_role": "admin"}],
+            },
+        ).json()
+        self.assertEqual(spare["code"], 200)
+        self.assertEqual(
+            self.client.delete(f"/api/approval-flows/{spare['data']['id']}", headers=admin_headers).status_code,
+            200,
+        )
+
+        with SessionLocal() as db:
+            stored = db.get(Reservation, reservation_id)
+            self.assertEqual(stored.status, "approved")
+            self.assertEqual(stored.approval_step_order, 2)
+
+        # 本用例的预约会进入首页“实验室使用排行”Top8，清掉数据避免影响后续统计断言。
+        from app.models.approval import ReservationApproval
+
+        with SessionLocal() as db:
+            reservation_ids = [reservation_id, rejected_id, edited_id, plain["id"]]
+            db.query(ReservationApproval).filter(ReservationApproval.reservation_id.in_(reservation_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(Notification).filter(Notification.related_id.in_(reservation_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(Reservation).filter(Reservation.lab_id == lab_id).delete(synchronize_session=False)
+            db.commit()
 
 
 class _ScriptedChatClient:
