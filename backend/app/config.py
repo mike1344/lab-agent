@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4.1-mini"
     # 模型调用超时（秒）：防止上游网络卡死占用 SSE 连接
     OPENAI_TIMEOUT_SECONDS: int = 60
+    # 读工具硬超时（秒）：读工具在独立线程/独立 Session 中执行，超时后放弃等待；
+    # 写工具为保护事务一致性不做强制中断，仍依赖模型超时、幂等键与审计。
+    TOOL_TIMEOUT_SECONDS: float = 10.0
     # 可选：智谱 4.5 系列设为 "disabled" 可关闭思考模式，首字延迟从十几秒降到 1 秒内；
     # 其他厂商（OpenAI 等）不认识该参数，保持留空。
     OPENAI_THINKING: str = ""

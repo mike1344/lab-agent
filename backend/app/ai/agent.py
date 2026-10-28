@@ -54,6 +54,8 @@ class AgentState(TypedDict, total=False):
     write_tool_handled: bool
     # 图内节点实时向外透传事件（SSE 端点传入；纯本地调用可以不传）。
     event_sink: Any
+    # 客户端断连时由流式生成器置位；工具节点在每次执行前检查，避免继续跑无用工具。
+    cancel_event: Any
 
 
 def _emit_event(state: AgentState, event: dict[str, Any]) -> None:
@@ -239,6 +241,45 @@ def _execute_tool(name: str, arguments: dict, db: Session, user_id: int, message
     return f"未知工具：{name}"
 
 
+def _execute_read_tool_isolated(name: str, arguments: dict, user_id: int, message: str) -> str:
+    """在读工具专用线程 + 新 Session 中执行，支持硬超时。
+
+    为什么只对读工具做硬超时：强制放弃一个正在写库的线程会留下未完成事务，
+    写工具仍走主 Session 的同步执行（幂等键 + 审计 + 模型超时兜底）。
+    超时后后台线程会自行结束并关闭 Session，主流程不再等待。
+    """
+    timeout = settings.TOOL_TIMEOUT_SECONDS
+
+    def run() -> str:
+        db = SessionLocal()
+        try:
+            return _execute_tool(name, arguments, db, user_id, message)
+        finally:
+            db.close()
+
+    if timeout <= 0:
+        return run()
+
+    results: queue.Queue = queue.Queue(maxsize=1)
+
+    def worker() -> None:
+        try:
+            results.put(("ok", run()))
+        except Exception as exc:  # noqa: BLE001 - 把异常交回主线程统一处理
+            results.put(("error", exc))
+
+    thread = threading.Thread(target=worker, name=f"ai-tool-{name}", daemon=True)
+    thread.start()
+    try:
+        status, payload = results.get(timeout=timeout)
+    except queue.Empty:
+        logger.warning("AI 读工具 %s 执行超时（%ss），已放弃等待", name, timeout)
+        return f"工具 {name} 执行超时（>{timeout}s），请稍后重试。"
+    if status == "error":
+        raise payload
+    return payload
+
+
 def _current_user_hint(state: AgentState) -> str:
     """把当前登录用户写进系统提示，避免模型反问用户姓名、学号。"""
     from app.models.user import User
@@ -366,6 +407,7 @@ def execute_tools_node(state: AgentState) -> AgentState:
     messages = state["messages"]
     last_assistant = messages[-1]
     write_tool_handled = state.get("write_tool_handled", False)
+    cancel_event = state.get("cancel_event")
 
     tool_results = []
     for tc in last_assistant.get("tool_calls", []):
@@ -375,6 +417,11 @@ def execute_tools_node(state: AgentState) -> AgentState:
         except json.JSONDecodeError:
             args = {}
         label = TOOL_LABELS.get(name, name)
+        if cancel_event is not None and cancel_event.is_set():
+            result = "对话已取消，未执行该工具。"
+            tool_results.append({"role": "tool", "tool_call_id": tc["id"], "content": result})
+            _emit_event(state, {"type": "tool_end", "name": name, "label": label, "result": result})
+            continue
         _emit_event(state, {"type": "tool_start", "name": name, "label": label})
 
         # 写工具：用户+工具+参数 计算幂等键；已成功执行过的相同请求直接复用结果
@@ -393,7 +440,11 @@ def execute_tools_node(state: AgentState) -> AgentState:
         else:
             started_at = time.perf_counter()
             try:
-                result = _execute_tool(name, args, state["db"], state["user_id"], state["message"])
+                if name in WRITE_TOOLS:
+                    # 写工具保留在主 Session 中执行：强制中断会破坏事务一致性。
+                    result = _execute_tool(name, args, state["db"], state["user_id"], state["message"])
+                else:
+                    result = _execute_read_tool_isolated(name, args, state["user_id"], state["message"])
             except Exception as exc:  # noqa: BLE001 - 单个工具失败不应中断整轮对话
                 logger.exception("AI 工具 %s 执行失败", name)
                 result = f"工具 {name} 执行失败：{type(exc).__name__}"
@@ -435,6 +486,9 @@ def execute_tools_node(state: AgentState) -> AgentState:
 
 def should_continue(state: AgentState) -> str:
     """条件边：最后一条消息有 tool_calls 就继续执行工具，否则结束。"""
+    cancel_event = state.get("cancel_event")
+    if cancel_event is not None and cancel_event.is_set():
+        return "end"
     if not settings.OPENAI_API_KEY:
         return "end"
     messages = state.get("messages") or []
@@ -482,6 +536,7 @@ def run_graph(
     db: Session,
     history: list[dict[str, str]] | None = None,
     event_sink=None,
+    cancel_event=None,
 ) -> AgentState:
     initial_state: AgentState = {
         "message": message,
@@ -489,6 +544,7 @@ def run_graph(
         "user_id": user_id,
         "db": db,
         "event_sink": event_sink,
+        "cancel_event": cancel_event,
     }
     if AGENT_GRAPH:
         return AGENT_GRAPH.invoke(initial_state)
@@ -513,12 +569,14 @@ def run_graph_stream(
     工具调用与最终回答都在图内完成，调用方不需要也不应该再跑第二条模型路径。
     """
     events: queue.Queue = queue.Queue()
+    # 客户端断连（生成器被关闭）时置位：工具节点会在下一次执行前退出。
+    cancel_event = threading.Event()
 
     def worker() -> None:
         # 数据库会话在后台线程内创建、使用、关闭，避免跨线程共享连接。
         db = SessionLocal()
         try:
-            final_state = run_graph(message, user_id, db, history, event_sink=events.put)
+            final_state = run_graph(message, user_id, db, history, event_sink=events.put, cancel_event=cancel_event)
             final_state = {key: value for key, value in final_state.items() if key not in ("db", "event_sink")}
             events.put({"type": "graph_done", "state": final_state})
         except Exception as exc:
@@ -532,13 +590,17 @@ def run_graph_stream(
 
     thread = threading.Thread(target=worker, name="ai-agent-graph", daemon=True)
     thread.start()
-    while True:
-        event = events.get()
-        if event is _GRAPH_STREAM_SENTINEL:
-            return
-        if event["type"] == "graph_error":
-            raise event["error"]
-        yield event
+    try:
+        while True:
+            event = events.get()
+            if event is _GRAPH_STREAM_SENTINEL:
+                return
+            if event["type"] == "graph_error":
+                raise event["error"]
+            yield event
+    finally:
+        # 消费者提前关闭生成器（浏览器断连/超时）时通知图内节点停止后续工具调用。
+        cancel_event.set()
 
 
 def build_prompt_context(state: AgentState, model_tool_results: list[str]) -> str:

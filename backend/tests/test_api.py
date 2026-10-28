@@ -2840,6 +2840,50 @@ class AiStreamConvergenceTest(unittest.TestCase):
             self.assertIsNotNone(logs[0].idempotency_key)
             self.assertEqual(db.query(AgentToolLog).count(), before + 1)
 
+    def test_read_tool_timeout_and_cancel_skip(self):
+        """读工具硬超时；客户端断连后跳过尚未执行的工具。"""
+        import threading
+        import time
+        from unittest.mock import patch
+
+        from app.ai import agent as agent_module
+        from app.config import settings
+
+        def make_state(**extra):
+            return {
+                "message": "列出开放实验室",
+                "user_id": 1,
+                "db": None,
+                "event_sink": lambda event: None,
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call_read",
+                                "type": "function",
+                                "function": {"name": "list_open_labs", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                ],
+                **extra,
+            }
+
+        with (
+            patch.object(agent_module, "list_open_labs", side_effect=lambda db: time.sleep(0.5) or "实验室列表"),
+            patch.object(settings, "TOOL_TIMEOUT_SECONDS", 0.05),
+        ):
+            timed_out = execute_tools_node(make_state())
+        self.assertIn("超时", timed_out["messages"][-1]["content"])
+
+        cancel_event = threading.Event()
+        cancel_event.set()
+        with patch.object(agent_module, "list_open_labs") as tool:
+            cancelled = execute_tools_node(make_state(cancel_event=cancel_event))
+        tool.assert_not_called()
+        self.assertIn("取消", cancelled["messages"][-1]["content"])
+
     def test_model_tool_path_stays_single_source(self):
         """结构回归：重复的图外模型工具入口不得回流，端点也不再自建数据库会话。"""
         import inspect
