@@ -6,7 +6,8 @@
 
 评估数据：backend/eval/rag_eval.jsonl（question / expected_source / answerable）。
 脚本调用与线上相同的 search_documents_with_meta，因此指标可直接反映当前配置
-（RAG_PROVIDER / RAG_MIN_SCORE / RAG_HYBRID_ALPHA）的检索质量。
+（RAG_PROVIDER / RAG_MIN_SCORE / RAG_MIN_COVERAGE / RAG_MIN_VECTOR_SCORE / RAG_HYBRID_ALPHA）
+的检索质量。切换 BGE：先 pip install sentence-transformers，再设 RAG_PROVIDER=bge。
 """
 
 import argparse
@@ -75,6 +76,8 @@ def evaluate(k: int, min_score: float) -> dict:
         "provider": embedding_provider(),
         "k": k,
         "min_score": min_score,
+        "min_coverage": settings.RAG_MIN_COVERAGE,
+        "min_vector_score": settings.RAG_MIN_VECTOR_SCORE,
         "cases": len(cases),
         f"recall@{k}": round(recall_hits / len(answerable), 4) if answerable else 0.0,
         "mrr": round(sum(reciprocal_ranks) / len(reciprocal_ranks), 4) if reciprocal_ranks else 0.0,

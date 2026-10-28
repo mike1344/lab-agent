@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     RAG_MIN_SCORE: float = 0.15
     # 本地哈希向量是词面匹配：查询双字词覆盖率低于该值时视为无证据
     RAG_MIN_COVERAGE: float = 0.15
+    # 稠密向量（bge/api）的最低相似度：低于该值视为语义不相关；local 模式不生效。
+    # 0.45 是基于 bge-small-zh-v1.5 在固定评估集上的校准值，换模型后应重新评估。
+    RAG_MIN_VECTOR_SCORE: float = 0.45
     RAG_RERANK_ENABLED: bool = True
     # AI 配置均为可选；不配置 Key 时系统使用本地知识库回答。
     OPENAI_API_KEY: str | None = None
