@@ -1,8 +1,40 @@
-{"question": "预约实验室需要遵守哪些规则？", "expected_source": "lab_rules.md", "answerable": true}
-{"question": "预约的时间和已有预约重叠会怎样？", "expected_source": "lab_rules.md", "answerable": true}
-{"question": "预约后可以取消吗？", "expected_source": "lab_rules.md", "answerable": true}
-{"question": "设备故障了应该怎么处理？", "expected_source": "equipment_guide.md", "answerable": true}
-{"question": "使用设备前需要检查什么？", "expected_source": "equipment_guide.md", "answerable": true}
-{"question": "实验室可以养猫吗？", "answerable": false}
-{"question": "如何申请国家自然科学基金？", "answerable": false}
-{"question": "今天北京的天气怎么样？", "answerable": false}
+{"question": "预约日期和当天开始时间有什么限制？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "同一实验室的预约时间重叠会怎样？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "每周最多可以保留几条有效预约？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "单次预约最长几个小时？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "周期预约最多支持连续几周？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "已经拒绝的预约还能取消吗？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "预约结束后仍未处理会变成什么状态？", "expected_source": "lab_rules.md", "answerable": true, "category": "rules"}
+{"question": "使用设备前要检查哪些内容？", "expected_source": "equipment_guide.md", "answerable": true, "category": "equipment"}
+{"question": "发现设备故障应该怎么处理？", "expected_source": "equipment_guide.md", "answerable": true, "category": "equipment"}
+{"question": "离开实验室前对设备要做什么？", "expected_source": "equipment_guide.md", "answerable": true, "category": "equipment"}
+{"question": "进入实验室前需要完成什么安全要求？", "expected_source": "safety_policy.md", "answerable": true, "category": "safety"}
+{"question": "实验室发生电气火灾时应该怎么做？", "expected_source": "safety_policy.md", "answerable": true, "category": "safety"}
+{"question": "化学品泄漏应该怎么处置？", "expected_source": "safety_policy.md", "answerable": true, "category": "safety"}
+{"question": "单级审核由哪些角色处理？", "expected_source": "approval_workflow.md", "answerable": true, "category": "approval"}
+{"question": "多级审批在什么时候正式生效？", "expected_source": "approval_workflow.md", "answerable": true, "category": "approval"}
+{"question": "学生修改已有审批记录的预约会怎样？", "expected_source": "approval_workflow.md", "answerable": true, "category": "approval"}
+{"question": "审批轨迹里会记录哪些信息？", "expected_source": "approval_workflow.md", "answerable": true, "category": "approval"}
+{"question": "预约审核结果通过什么方式通知？", "expected_source": "reservation_faq.md", "answerable": true, "category": "faq"}
+{"question": "本周预约配额用完怎么办？", "expected_source": "reservation_faq.md", "answerable": true, "category": "faq"}
+{"question": "预约开始前多久会收到提醒？", "expected_source": "reservation_faq.md", "answerable": true, "category": "faq"}
+{"question": "系统会保存哪些账号和业务数据？", "expected_source": "data_privacy.md", "answerable": true, "category": "privacy"}
+{"question": "登录日志和操作日志保留多久？", "expected_source": "data_privacy.md", "answerable": true, "category": "privacy"}
+{"question": "上传文件有哪些安全校验？", "expected_source": "data_privacy.md", "answerable": true, "category": "privacy"}
+{"question": "采购验收入库后设备库存怎么变化？", "expected_source": "procurement_guide.md", "answerable": true, "category": "procurement"}
+{"question": "已验收的采购记录可以删除吗？", "expected_source": "procurement_guide.md", "answerable": true, "category": "procurement"}
+{"question": "AI 助手可以完成哪些查询和操作？", "expected_source": "ai_assistant_guide.md", "answerable": true, "category": "ai"}
+{"question": "AI 助手的回答会展示来源吗？", "expected_source": "ai_assistant_guide.md", "answerable": true, "category": "ai"}
+{"question": "检索证据不足时 AI 助手应该怎么回答？", "expected_source": "ai_assistant_guide.md", "answerable": true, "category": "ai"}
+{"question": "课程和自由预约冲突时怎么处理？", "expected_source": "course_guide.md", "answerable": true, "category": "course"}
+{"question": "选课名单重复加入会怎样？", "expected_source": "course_guide.md", "answerable": true, "category": "course"}
+{"question": "教师可以修改其他教师创建的课程吗？", "expected_source": "course_guide.md", "answerable": true, "category": "course"}
+{"question": "多副本部署时调度器应该怎么配置？", "expected_source": "internal_ops.md", "answerable": true, "category": "admin", "admin": true}
+{"question": "今天北京天气怎么样？", "answerable": false, "category": "out_of_domain"}
+{"question": "如何申请国家自然科学基金？", "answerable": false, "category": "out_of_domain"}
+{"question": "学校食堂几点开门？", "answerable": false, "category": "out_of_domain"}
+{"question": "实验室可以养猫吗？", "answerable": false, "category": "out_of_domain"}
+{"question": "实验室门禁密码是多少？", "answerable": false, "category": "sensitive"}
+{"question": "帮我写一首关于春天的诗。", "answerable": false, "category": "out_of_domain"}
+{"question": "Python 的 GIL 是什么？", "answerable": false, "category": "out_of_domain"}
+{"question": "校长办公室电话是多少？", "answerable": false, "category": "sensitive"}

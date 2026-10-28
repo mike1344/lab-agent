@@ -167,7 +167,7 @@ docker compose exec backend python -m scripts.create_admin --username admin --em
 5. **可解释引用**：回答上下文带「来源：标题 § 章节｜相关度」，前端展示「参考来源」，SSE 也会下发 `sources` 事件；
 6. **增量同步**：按内容哈希增量写入 ChromaDB，新增/修改/删除文件都不需要清库。
 
-固定评估集与指标（`backend/eval/rag_eval.jsonl`，K=4）：
+固定评估集与指标（`backend/eval/rag_eval.jsonl`，40 题、10 篇文档、K=4）：
 
 ```powershell
 cd backend
@@ -176,10 +176,10 @@ cd backend
 
 | 向量方案 | Recall@4 | MRR | 引用准确率 | 拒答率 |
 | --- | --- | --- | --- | --- |
-| `local`（默认，离线哈希） | 1.0 | 1.0 | 1.0 | 0.667 |
-| `bge`（bge-small-zh-v1.5） | 1.0 | 1.0 | 1.0 | **1.0** |
+| `local`（默认，离线哈希） | 1.0 | 0.9688 | 0.9375 | 0.75 |
+| `bge`（bge-small-zh-v1.5） | 1.0 | **0.9844** | **0.9688** | **1.0** |
 
-默认 `local` 是离线轻量方案，纯词面匹配无法判断「实验室可以养猫吗」与知识库语义无关，所以拒答率为 0.667；这是已知取舍，不对外宣称高精度语义检索。完整方法、延迟与局限见 [docs/rag-evaluation.md](docs/rag-evaluation.md)。
+默认 `local` 是离线轻量方案，词面匹配对「实验室可以养猫吗」「门禁密码」这类语义无关问题判断不足，所以拒答率为 0.75；这是已知取舍，不对外宣称高精度语义检索。完整方法、分类指标、延迟与局限见 [docs/rag-evaluation.md](docs/rag-evaluation.md)。
 
 需要语义级拒答时，安装可选依赖并切换 BGE 后重跑评估：
 
@@ -191,7 +191,7 @@ $env:HF_ENDPOINT="https://hf-mirror.com"   # 国内网络可选，模型约 100M
 .\.venv\Scripts\python.exe scripts\eval_rag.py
 ```
 
-BGE 的 `RAG_MIN_VECTOR_SCORE=0.45` 是在这份固定评估集上校准的（有效问题最低向量分约 0.61，无关问题最高约 0.42）；**换 Embedding 模型后应重新校准**。`sentence-transformers` 不进入默认 `requirements.txt`，避免 CI/Docker 无谓膨胀；未安装或模型加载失败时自动降级回 `local`。当前网关没有 Embedding 接口，`RAG_PROVIDER=api` 需要另配支持 embeddings 的 OpenAI 兼容服务。
+BGE 的 `RAG_MIN_VECTOR_SCORE=0.54` 是在这份 40 题评估集上校准的（可回答问题最低向量分约 0.55，不可回答最高约 0.53）；**换 Embedding 模型或扩充评估集后应重新校准**。`sentence-transformers` 不进入默认 `requirements.txt`，避免 CI/Docker 无谓膨胀；未安装或模型加载失败时自动降级回 `local`。当前网关没有 Embedding 接口，`RAG_PROVIDER=api` 需要另配支持 embeddings 的 OpenAI 兼容服务。
 
 ## AI 助手安全边界
 
@@ -268,10 +268,11 @@ powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 
 预约日期可以选择今天或未来，但当天的开始时间必须晚于服务器当前时间。管理员审核时也会重新检查预约时间和实验室开放状态。
 
-## 答辩 / 面试材料
+## 解决方案与演示材料
 
-- [`docs/demo-guide.md`](docs/demo-guide.md)：8 分钟演示脚本、可用账号、演示前检查清单、截图索引；
-- [`docs/rag-evaluation.md`](docs/rag-evaluation.md)：RAG 评估方法、local/BGE 对照、检索延迟与局限；
+- [`docs/ai-solution-brief.md`](docs/ai-solution-brief.md)：AI 实验室助手解决方案说明（客户问题、架构、能力边界、部署/成本取舍、POC 计划）；
+- [`docs/demo-guide.md`](docs/demo-guide.md)：8 分钟 POC 演示脚本、可用账号、演示前检查清单、截图索引；
+- [`docs/rag-evaluation.md`](docs/rag-evaluation.md)：RAG 评估方法、local/BGE 对照、分类指标、检索延迟与局限；
 - [`docs/e2e-acceptance.md`](docs/e2e-acceptance.md)：浏览器 E2E（学生改约 → 教师审核 → 学生看到已通过）复现步骤；
 - [`docs/performance.md`](docs/performance.md)：只读接口压测结果（并发 1/10/20 的 QPS 与 P95/P99）；
 - `docs/visual-check/01`～`13`：真实浏览器截图证据。

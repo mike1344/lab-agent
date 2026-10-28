@@ -7,7 +7,7 @@
 > 多级审批流（36）与 AI 工具审计留存（29 补充）已完成并合并（PR #2 → `217d823`）。
 > RAG 补充稠密向量拒答门槛：BGE 可选路径在固定评估集上拒答率 1.0（默认仍为 local；PR #3 → `ebf24d1`）。
 > Agent 工具超时：读工具 10 秒硬超时 + 断连跳过后续工具；写工具为事务一致性不强制中断（P2-7 部分完成，PR #4 → `0039eb4`）。
-> 答辩材料：新增 `docs/rag-evaluation.md`、`docs/e2e-acceptance.md`、`docs/performance.md`、`docs/demo-guide.md` 与 E2E/压测脚本。
+> 解决方案材料：知识库扩到 10 篇、评估集 40 题，BGE 拒答率 1.0；新增 `docs/ai-solution-brief.md` 与 RAG 评估报告。
 
 ## 一、对标项目
 
