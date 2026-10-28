@@ -32,6 +32,11 @@ export function updateReservationApi(reservationId, data) {
   return request.put(`/api/reservations/${reservationId}`, data)
 }
 
+/** 审批进度详情：申请人或教师/管理员可查看 */
+export function getReservationApprovalApi(reservationId) {
+  return request.get(`/api/reservations/${reservationId}/approval`)
+}
+
 export function exportReservationsApi(params) {
   return request.get('/api/reservations/export', { params, responseType: 'blob' })
 }

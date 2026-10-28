@@ -35,6 +35,9 @@ EXPECTED_TABLES = {
     "courses",
     "course_enrollments",
     "agent_tool_logs",
+    "approval_flows",
+    "approval_steps",
+    "reservation_approvals",
 }
 
 

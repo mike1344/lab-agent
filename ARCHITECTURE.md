@@ -104,16 +104,33 @@ sequenceDiagram
     alt 时间冲突
         API-->>Web: 400 该时间段已有预约
     else 可以预约
-        API->>DB: 写入 pending 预约
+        API->>DB: 写入 pending 预约；有审批流时快照首节点
         API-->>Web: 提交成功
     end
 
-    Admin->>Web: 打开预约审核
-    Web->>API: PUT /api/reservations/{id}/review
-    API->>DB: 更新 approved 或 rejected
-    API-->>Web: 审核完成
-    Student->>Web: 查看我的预约和审核意见
+    alt 实验室配置了多级审批流
+        loop 每个审批节点
+            Admin->>Web: 当前节点审批人打开预约审核
+            Web->>API: PUT /api/reservations/{id}/review
+            API->>DB: 校验当前节点权限并写入审批轨迹
+            alt 还有下一节点
+                API->>DB: approval_step_order + 1，保持 pending
+                API-->>Web: 已通过本级，通知下一节点审批人
+            else 最后一个节点通过
+                API->>DB: 更新 approved
+                API-->>Web: 审核完成
+            end
+        end
+    else 未配置审批流（单级审核）
+        Admin->>Web: 打开预约审核
+        Web->>API: PUT /api/reservations/{id}/review
+        API->>DB: 更新 approved 或 rejected
+        API-->>Web: 审核完成
+    end
+    Student->>Web: 查看我的预约、审批进度和审核意见
 ```
+
+多级审批的核心规则：创建预约时快照 `approval_flow_id` 与当前节点；审核接口只允许当前节点匹配的审批人（管理员可兜底）操作；中间节点通过只推进节点，最终节点通过才把预约置为 `approved`，任一节点拒绝立即 `rejected`。已有审批记录的预约被学生改约时，旧轨迹作废并从首节点重走。
 
 时间冲突的核心判断是：`已有开始时间 < 新结束时间` 且 `已有结束时间 > 新开始时间`。这比只比较开始时间更完整，也能正确识别“包含”和“部分重叠”。
 
@@ -153,6 +170,7 @@ flowchart TD
 | 用户与个人中心（资料、密码、头像上传、管理员用户管理） | `views/user.vue` | `api/user.py`、`api/upload.py` |
 | 实验室、设备与不可约时段 | `views/lab.vue`、`views/equ.vue` | `api/lab.py`、`api/equipment.py`、`api/blackout.py` |
 | 预约与审核 | `views/reservation.vue` | `api/reservation.py`、`services/reservation.py` |
+| 多级审批流（流程配置、节点流转、进度轨迹） | `views/approval.vue`、`views/reservation.vue` | `api/approval.py`、`services/approval.py`、`models/approval.py` |
 | 公告、报修与通知 | `views/announcement.vue`、`views/repair.vue`、`layouts/layouts.vue` | `api/announcement.py`、`api/repair.py`、`api/notification.py` |
 | AI 助手（RAG、Tool Calling、LangGraph、SSE） | `views/chat.vue` | `api/ai.py`、`ai/knowledge.py`、`ai/tools.py`、`ai/agent.py` |
 | 首页统计 | `views/home.vue` | `api/stats.py` |

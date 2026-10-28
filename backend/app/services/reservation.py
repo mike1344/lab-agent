@@ -10,6 +10,12 @@ from app.models.course import Course
 from app.models.lab import Lab
 from app.models.reservation import Reservation
 from app.schemas.reservation import ReservationCreate
+from app.services.approval import (
+    create_step_notifications,
+    get_active_flow,
+    push_pending_notifications,
+    start_approval,
+)
 
 
 def check_slot_available(
@@ -117,8 +123,11 @@ def create_reservation_record(
             message="单次预约不能超过 4 小时",
         )
 
+    # 流程只在提交时取一次：同一次周期预约的每一周都进入同一条流程的首节点。
+    flow = get_active_flow(db, data.lab_id)
     created = []
     skipped = []
+    approval_payloads = []
 
     for week_offset in range(data.repeat_weeks):
         current_date = data.reservation_date + timedelta(weeks=week_offset)
@@ -144,6 +153,12 @@ def create_reservation_record(
             purpose=data.purpose,
         )
         db.add(reservation)
+        db.flush()
+        if flow:
+            step = start_approval(reservation, flow)
+            if step:
+                db.flush()
+                approval_payloads.extend(create_step_notifications(db, reservation, step))
         created.append(reservation)
 
     try:
@@ -157,4 +172,6 @@ def create_reservation_record(
 
     for r in created:
         db.refresh(r)
+    # 通知已随预约一起提交；WebSocket 推送放在提交之后，避免推送到尚未落库的数据。
+    push_pending_notifications(approval_payloads)
     return created, skipped

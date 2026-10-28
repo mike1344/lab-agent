@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.ai import router as ai_router
 from app.api.announcement import router as announcement_router
+from app.api.approval import router as approval_router
 from app.api.auth import router as auth_router
 from app.api.blackout import router as blackout_router
 from app.api.course import router as course_router
@@ -28,6 +29,7 @@ api.include_router(lab_router)
 api.include_router(equipment_router)
 api.include_router(favorite_router)
 api.include_router(course_router)
+api.include_router(approval_router)
 api.include_router(reservation_router)
 api.include_router(announcement_router)
 api.include_router(repair_router)

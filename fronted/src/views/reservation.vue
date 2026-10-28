@@ -12,6 +12,7 @@
       <el-select v-if="isStaff" v-model="selectedLabId" clearable placeholder="全部实验室" style="width: 190px" @change="loadReservationList">
         <el-option v-for="lab in labList" :key="lab.id" :label="lab.name" :value="lab.id" />
       </el-select>
+      <el-checkbox v-if="isStaff" v-model="pendingOnly" @change="loadReservationList">只看待我审批</el-checkbox>
       <el-button @click="loadReservationList">刷新</el-button>
       <el-button v-if="isStaff" type="success" plain @click="exportExcel">导出 Excel</el-button>
     </div>
@@ -27,12 +28,21 @@
       <el-table-column label="状态" width="100">
         <template #default="scope"><el-tag :type="statusMap[scope.row.status]?.type">{{ statusMap[scope.row.status]?.label || scope.row.status }}</el-tag></template>
       </el-table-column>
+      <el-table-column label="审批进度" width="190">
+        <template #default="{ row }">
+          <el-tag v-if="row.approval" size="small" :type="approvalTagType(row)">{{ approvalText(row) }}</el-tag>
+          <span v-else class="operation-finished">单级审核</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="review_comment" label="审核意见" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="scope">
           <template v-if="isStaff && scope.row.status === 'pending'">
-            <el-button link type="success" @click="openReviewDialog(scope.row, 'approved')">通过</el-button>
-            <el-button link type="danger" @click="openReviewDialog(scope.row, 'rejected')">拒绝</el-button>
+            <template v-if="scope.row.can_review">
+              <el-button link type="success" @click="openReviewDialog(scope.row, 'approved')">通过</el-button>
+              <el-button link type="danger" @click="openReviewDialog(scope.row, 'rejected')">拒绝</el-button>
+            </template>
+            <el-tag v-else type="info" size="small">待「{{ scope.row.approval?.current_step_name || '审批' }}」</el-tag>
           </template>
           <template v-else-if="!isStaff && scope.row.status === 'pending'">
             <el-button link type="primary" @click="openEditDialog(scope.row)">修改</el-button>
@@ -40,11 +50,21 @@
           </template>
           <el-button v-else-if="!isStaff && scope.row.status === 'approved'" link type="danger" @click="cancelReservation(scope.row)">取消预约</el-button>
           <span v-else class="operation-finished">已处理</span>
+          <el-button v-if="scope.row.approval" link type="primary" @click="openProgress(scope.row)">进度</el-button>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="reviewDialogVisible" :title="reviewForm.status === 'approved' ? '通过预约' : '拒绝预约'" width="460px">
+    <el-dialog v-model="reviewDialogVisible" :title="reviewTitle" width="480px">
+      <el-alert
+        v-if="selectedReservation?.approval"
+        type="info"
+        :closable="false"
+        show-icon
+        class="review-step-tip"
+        :title="`第 ${selectedReservation.approval.current_step}/${selectedReservation.approval.total_steps} 步 · ${selectedReservation.approval.current_step_name}`"
+        :description="`本节点审批人：${selectedReservation.approval.current_approver || '不限'}。通过后进入下一节点，全部节点通过预约才正式生效。`"
+      />
       <el-form label-position="top">
         <el-form-item label="审核意见">
           <el-input v-model="reviewForm.review_comment" type="textarea" :rows="4" :placeholder="reviewForm.status === 'rejected' ? '建议填写拒绝原因' : '可填写使用注意事项'" />
@@ -77,17 +97,62 @@
         <el-form-item label="用途">
           <el-input v-model="editForm.purpose" type="textarea" :rows="3" placeholder="请填写预约用途" />
         </el-form-item>
+        <el-alert
+          v-if="editingHadApproval"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="这条预约已经产生审批记录，保存修改后会从第一节点重新审批。"
+        />
       </el-form>
       <template #footer><el-button @click="editDialogVisible = false">取消</el-button><el-button type="primary" :loading="savingValue" @click="saveEdit">保存修改</el-button></template>
+    </el-dialog>
+
+    <!-- 审批进度 -->
+    <el-dialog v-model="progressVisible" title="审批进度" width="580px">
+      <div v-loading="progressLoading" class="progress-body">
+        <template v-if="progressDetail">
+          <div v-if="progressDetail.flow" class="progress-head">
+            <span class="progress-flow">{{ progressDetail.flow.name }}</span>
+            <el-tag size="small" :type="progressDetail.flow.enabled ? 'success' : 'info'">
+              {{ progressDetail.flow.enabled ? '启用中' : '已停用' }}
+            </el-tag>
+            <span class="progress-count">共 {{ progressDetail.total_steps }} 级</span>
+          </div>
+          <el-timeline v-if="progressDetail.steps?.length" class="progress-timeline">
+            <el-timeline-item
+              v-for="step in progressDetail.steps"
+              :key="step.step_order"
+              :type="stepTimelineType(step.state)"
+              :timestamp="step.decision?.create_time ? formatDateTime(step.decision.create_time) : stepStateLabel(step.state)"
+            >
+              <div class="progress-step-title">第 {{ step.step_order }} 步 · {{ step.name }}</div>
+              <div class="progress-step-meta">审批人：{{ step.approver_name }}</div>
+              <div v-if="step.decision" class="progress-step-meta">
+                {{ step.decision.action_label }}：{{ step.decision.comment || '无意见' }}
+              </div>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else description="该预约没有配置多级审批，由教师/管理员单级审核" :image-size="70" />
+        </template>
+      </div>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getLabListApi } from '@/api/lab'
-import { cancelReservationApi, exportReservationsApi, getMyReservationListApi, getReservationListApi, reviewReservationApi, updateReservationApi } from '@/api/reservation'
+import {
+  cancelReservationApi,
+  exportReservationsApi,
+  getMyReservationListApi,
+  getReservationApprovalApi,
+  getReservationListApi,
+  reviewReservationApi,
+  updateReservationApi
+} from '@/api/reservation'
 import { useUser } from '@/utils/user'
 
 const { isStaff } = useUser()
@@ -95,6 +160,7 @@ const loadingValue = ref(false)
 const savingValue = ref(false)
 const statusValue = ref('')
 const selectedLabId = ref(null)
+const pendingOnly = ref(false)
 const labList = ref([])
 const reservationList = ref([])
 const reviewDialogVisible = ref(false)
@@ -103,6 +169,10 @@ const reviewForm = reactive({ status: 'approved', review_comment: '', signature_
 const editDialogVisible = ref(false)
 const editForm = reactive({ reservation_date: '', start_time: '', end_time: '', purpose: '' })
 const editingId = ref(null)
+const editingHadApproval = ref(false)
+const progressVisible = ref(false)
+const progressLoading = ref(false)
+const progressDetail = ref(null)
 const disablePastDate = (date) => date.getTime() < new Date().setHours(0, 0, 0, 0)
 
 const statusOptions = [
@@ -116,10 +186,40 @@ const statusMap = {
   expired: { label: '已过期', type: 'info' }
 }
 
+const reviewTitle = computed(() => {
+  const approval = selectedReservation.value?.approval
+  const action = reviewForm.status === 'approved' ? '通过' : '拒绝'
+  if (!approval) return `${action}预约`
+  return `${action}「${approval.current_step_name}」（第 ${approval.current_step}/${approval.total_steps} 步）`
+})
+
+const approvalText = (row) => {
+  const approval = row.approval
+  if (row.status === 'approved') return `已完成 ${approval.total_steps} 级审批`
+  if (row.status === 'rejected') return '审批未通过'
+  return `第 ${approval.current_step}/${approval.total_steps} 步 · ${approval.current_step_name}`
+}
+const approvalTagType = (row) => {
+  if (row.status === 'approved') return 'success'
+  if (row.status === 'rejected') return 'danger'
+  return 'warning'
+}
+const stepTimelineType = (state) => ({
+  approved: 'success', rejected: 'danger', pending: 'warning', skipped: 'info', upcoming: 'info'
+}[state] || 'info')
+const stepStateLabel = (state) => ({
+  approved: '已通过', rejected: '已拒绝', pending: '待审批', skipped: '未进行', upcoming: '待流转'
+}[state] || state)
+const formatDateTime = (value) => (value ? String(value).slice(0, 16) : '')
+
 const loadReservationList = async () => {
   loadingValue.value = true
   try {
-    const params = { status: statusValue.value, lab_id: selectedLabId.value || undefined }
+    const params = {
+      status: statusValue.value,
+      lab_id: selectedLabId.value || undefined,
+      pending_for_me: isStaff.value && pendingOnly.value ? true : undefined
+    }
     const res = isStaff.value ? await getReservationListApi(params) : await getMyReservationListApi(params)
     reservationList.value = res.data
   } finally { loadingValue.value = false }
@@ -140,8 +240,8 @@ const saveReview = async () => {
       reviewForm.status === 'rejected' && reviewForm.signature_password
         ? { signature_password: reviewForm.signature_password }
         : undefined
-    await reviewReservationApi(selectedReservation.value.id, reviewForm, params)
-    ElMessage.success('预约审核完成')
+    const res = await reviewReservationApi(selectedReservation.value.id, reviewForm, params)
+    ElMessage.success(res.message || '预约审核完成')
     reviewDialogVisible.value = false
     await loadReservationList()
   } finally { savingValue.value = false }
@@ -160,6 +260,7 @@ const cancelReservation = async (reservation) => {
 
 const openEditDialog = (reservation) => {
   editingId.value = reservation.id
+  editingHadApproval.value = Boolean(reservation.approval && reservation.approval.current_step > 1)
   editForm.reservation_date = reservation.reservation_date
   editForm.start_time = reservation.start_time
   editForm.end_time = reservation.end_time
@@ -170,11 +271,23 @@ const openEditDialog = (reservation) => {
 const saveEdit = async () => {
   savingValue.value = true
   try {
-    await updateReservationApi(editingId.value, { ...editForm })
-    ElMessage.success('预约已修改')
+    const res = await updateReservationApi(editingId.value, { ...editForm })
+    ElMessage.success(res.message || '预约已修改')
     editDialogVisible.value = false
     await loadReservationList()
   } finally { savingValue.value = false }
+}
+
+const openProgress = async (reservation) => {
+  progressDetail.value = null
+  progressVisible.value = true
+  progressLoading.value = true
+  try {
+    const res = await getReservationApprovalApi(reservation.id)
+    progressDetail.value = res.data
+  } finally {
+    progressLoading.value = false
+  }
 }
 
 const exportExcel = async () => {
@@ -206,4 +319,12 @@ onMounted(async () => {
 <style scoped>
 .operation-finished { color: #c0c4cc; font-size: 13px; }
 .signature-hint { margin-top: 4px; font-size: 12px; line-height: 1.5; color: #909399; }
+.review-step-tip { margin-bottom: 14px; }
+.progress-body { min-height: 120px; }
+.progress-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.progress-flow { font-weight: 600; color: #303133; }
+.progress-count { margin-left: auto; color: #909399; font-size: 12px; }
+.progress-timeline { padding-left: 4px; }
+.progress-step-title { font-weight: 600; color: #303133; }
+.progress-step-meta { margin-top: 3px; font-size: 13px; color: #606266; }
 </style>
