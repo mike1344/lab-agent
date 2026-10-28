@@ -403,6 +403,21 @@ def _merge_results(
     return sorted(merged.values(), key=lambda item: item["score"], reverse=True)
 
 
+def filter_by_confidence(items: list[dict], provider: str) -> list[dict]:
+    """按当前向量提供方过滤证据。
+
+    - local：哈希向量只有词面含义，要求查询双字词覆盖率达标；
+    - bge/api：稠密向量用余弦相似度下限判断语义相关性，避免“共享几个字”
+      的无关问题也被放行（例如“实验室可以养猫吗”）。
+    最后统一再套一层混合分数 RAG_MIN_SCORE。
+    """
+    if provider == "local":
+        items = [item for item in items if item["coverage"] >= settings.RAG_MIN_COVERAGE]
+    elif settings.RAG_MIN_VECTOR_SCORE > 0:
+        items = [item for item in items if item["vector_score"] >= settings.RAG_MIN_VECTOR_SCORE]
+    return [item for item in items if item["score"] >= settings.RAG_MIN_SCORE]
+
+
 def search_documents_with_meta(
     query: str,
     limit: int | None = None,
@@ -466,11 +481,9 @@ def search_documents_with_meta(
                 "bm25_score": round(item["bm25_score"], 4),
             }
             for item in merged
-        ][:limit]
-        # 本地哈希向量是纯词面匹配：没有词面命中就视为无证据（避免 0 覆盖也能拿分）
-        if provider == "local":
-            items = [item for item in items if item["coverage"] >= settings.RAG_MIN_COVERAGE]
-        items = [item for item in items if item["score"] >= settings.RAG_MIN_SCORE]
+        ]
+        # 先过滤再截断：避免最高分证据被阈值剔除后，剩余结果不足 limit。
+        items = filter_by_confidence(items, provider)[:limit]
         return {"items": items, "backend": "ChromaDB", "ok": bool(items), "provider": provider}
     except Exception as exc:  # noqa: BLE001 - RAG 不是核心业务硬依赖
         logger.warning("ChromaDB 检索失败，已切换到本地 BM25：%s", exc)

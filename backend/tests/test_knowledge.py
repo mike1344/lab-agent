@@ -137,6 +137,25 @@ class KnowledgeIndexSyncTest(unittest.TestCase):
         self.assertFalse(strict["ok"])
         self.assertEqual(strict["items"], [])
 
+    def test_confidence_gate_uses_coverage_for_local_and_vector_for_dense(self):
+        """local 看词面覆盖率，bge/api 看向量相似度，两者都不跳过最低混合分。"""
+        from app.config import settings
+
+        low_vector = {"coverage": 0.4, "vector_score": 0.39, "score": 0.5}
+        high_vector = {"coverage": 0.0, "vector_score": 0.62, "score": 0.5}
+        low_coverage = {"coverage": 0.01, "vector_score": 0.62, "score": 0.5}
+        low_score = {"coverage": 0.5, "vector_score": 0.62, "score": 0.01}
+
+        with patch.object(settings, "RAG_MIN_VECTOR_SCORE", 0.45):
+            # local 不做语义判断：覆盖率达标即可，向量分不参与
+            self.assertEqual(knowledge.filter_by_confidence([low_vector], "local"), [low_vector])
+            self.assertEqual(knowledge.filter_by_confidence([low_coverage], "local"), [])
+            # 稠密向量：0.39 低于 0.45 被拒，0.62 放行
+            self.assertEqual(knowledge.filter_by_confidence([low_vector], "bge"), [])
+            self.assertEqual(knowledge.filter_by_confidence([high_vector], "bge"), [high_vector])
+            # 混合分不足时，即使向量/覆盖率达标也拒绝
+            self.assertEqual(knowledge.filter_by_confidence([low_score], "bge"), [])
+
     def test_docx_document_is_parsed(self):
         """Word 文档通过标准库解析（无需 python-docx）。"""
         import zipfile

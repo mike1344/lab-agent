@@ -163,24 +163,35 @@ docker compose exec backend python -m scripts.create_admin --username admin --em
 1. **标题感知分块**：块元数据包含 `title / section / version / visibility`，管理员文档只对管理员可见；
 2. **混合召回**：向量相似度 + BM25（纯 Python，中文按字符与双字切词）按 `RAG_HYBRID_ALPHA` 加权；
 3. **可配置 Embedding**：默认 `local`（离线哈希，零依赖）；`bge` 可接 BGE 中文模型（需 `pip install sentence-transformers`）；`api` 可接 OpenAI 兼容 Embedding；
-4. **置信度与拒答**：结果带 `score / coverage`，低于 `RAG_MIN_SCORE` 或本地位面覆盖率不足时标记无证据，回答会明确说明资料不足；
+4. **置信度与拒答**：结果带 `score / coverage / vector_score`；`local` 用词面覆盖率，`bge/api` 用稠密向量相似度下限（`RAG_MIN_VECTOR_SCORE`），证据不足时标记 `ok=False`，回答明确说明资料不足；
 5. **可解释引用**：回答上下文带「来源：标题 § 章节｜相关度」，前端展示「参考来源」，SSE 也会下发 `sources` 事件；
 6. **增量同步**：按内容哈希增量写入 ChromaDB，新增/修改/删除文件都不需要清库。
 
-固定评估集与指标（`backend/eval/rag_eval.jsonl`，当前 local 向量、K=4）：
+固定评估集与指标（`backend/eval/rag_eval.jsonl`，K=4）：
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe scripts\eval_rag.py
 ```
 
-当前结果：Recall@4 = 1.0、MRR = 1.0、引用准确率 = 1.0、拒答率 = 0.67。
-拒答未到 1.0 的原因已定位：示例集中「实验室可以养猫吗」与知识库共享大量词面（实验室/可以），
-纯词面匹配无法判断语义不相关——这类样本需要语义型答案判定（BGE/API 向量或 LLM 判断），
-属于后续增强，不在当前结论里夸大。
+| 向量方案 | Recall@4 | MRR | 引用准确率 | 拒答率 |
+| --- | --- | --- | --- | --- |
+| `local`（默认，离线哈希） | 1.0 | 1.0 | 1.0 | 0.667 |
+| `bge`（bge-small-zh-v1.5） | 1.0 | 1.0 | 1.0 | **1.0** |
 
-> 说明：默认 `local` 向量是「离线轻量检索」方案，适合无网络环境；要对外表述 RAG 能力时，
-> 建议切换 `RAG_PROVIDER=bge` 或 `api` 后重新跑评估集，用实际指标说话。
+默认 `local` 是离线轻量方案，纯词面匹配无法判断「实验室可以养猫吗」与知识库语义无关，所以拒答率为 0.667；这是已知取舍，不对外宣称高精度语义检索。
+
+需要语义级拒答时，安装可选依赖并切换 BGE 后重跑评估：
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pip install sentence-transformers
+$env:RAG_PROVIDER="bge"
+$env:HF_ENDPOINT="https://hf-mirror.com"   # 国内网络可选，模型约 100MB
+.\.venv\Scripts\python.exe scripts\eval_rag.py
+```
+
+BGE 的 `RAG_MIN_VECTOR_SCORE=0.45` 是在这份固定评估集上校准的（有效问题最低向量分约 0.61，无关问题最高约 0.42）；**换 Embedding 模型后应重新校准**。`sentence-transformers` 不进入默认 `requirements.txt`，避免 CI/Docker 无谓膨胀；未安装或模型加载失败时自动降级回 `local`。当前网关没有 Embedding 接口，`RAG_PROVIDER=api` 需要另配支持 embeddings 的 OpenAI 兼容服务。
 
 ## AI 助手安全边界
 
