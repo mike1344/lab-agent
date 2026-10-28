@@ -1,0 +1,16 @@
+[tool.ruff]
+# 行宽放宽到 120：现有代码风格偏长行，避免一次性产生大量格式噪音
+line-length = 120
+target-version = "py310"
+# 只检查 backend 目录内的源码（在 backend/ 下执行 ruff）
+src = ["app", "tests", "alembic", "scripts"]
+
+[tool.ruff.lint]
+# E4/E7/E9 是语法级错误（未定义名、导入失败等），F 是 pyflakes 语义检查；
+# I 负责 import 排序。E501 行宽交给 formatter，不在这里卡。
+select = ["E4", "E7", "E9", "F", "I", "W"]
+ignore = ["E501", "W291", "W293"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试用例允许长断言链与私有访问；test_api 需要先设置环境变量再导入 app，E402 是刻意为之
+"tests/*" = ["F401", "E402"]

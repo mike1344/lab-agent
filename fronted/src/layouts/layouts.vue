@@ -73,6 +73,10 @@
             <el-icon><Calendar /></el-icon>
             <span>{{ isStaff ? '预约审核' : '我的预约' }}</span>
           </el-menu-item>
+          <el-menu-item index="/course">
+            <el-icon><Notebook /></el-icon>
+            <span>实验课程</span>
+          </el-menu-item>
           <el-menu-item index="/chat">
             <el-icon><ChatDotRound /></el-icon>
             <span>AI 实验室助手</span>
@@ -84,6 +88,18 @@
           <el-menu-item index="/repair">
             <el-icon><Tools /></el-icon>
             <span>{{ isAdmin ? '报修管理' : '我的报修' }}</span>
+          </el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/procurement">
+            <el-icon><ShoppingCart /></el-icon>
+            <span>采购管理</span>
+          </el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/report">
+            <el-icon><TrendCharts /></el-icon>
+            <span>报表中心</span>
+          </el-menu-item>
+          <el-menu-item v-if="isAdmin" index="/oplog">
+            <el-icon><Document /></el-icon>
+            <span>操作日志</span>
           </el-menu-item>
           <el-menu-item index="/user">
             <el-icon><User /></el-icon>
@@ -114,9 +130,13 @@ import {
   Calendar,
   ChatDotRound,
   DataBoard,
+  Document,
   House,
+  Notebook,
   Setting,
+  ShoppingCart,
   Tools,
+  TrendCharts,
   User,
   UserFilled
 } from '@element-plus/icons-vue'
@@ -127,6 +147,9 @@ import {
   markAsReadApi,
   markAllAsReadApi
 } from '@/api/notification'
+import { ElNotification } from 'element-plus'
+import { getToken } from '@/utils/auth'
+import { createNotificationStream } from '@/utils/ws'
 import { useUser } from '@/utils/user'
 import logo from '@/assets/css/images/logo.png'
 
@@ -140,6 +163,9 @@ const unreadCount = ref(0)
 const drawerVisible = ref(false)
 const notifications = ref([])
 let pollTimer = null
+// WebSocket 实时通知连接：在线时轮询暂停，掉线自动回到 30 秒轮询兜底
+const wsConnected = ref(false)
+let notificationStream = null
 
 async function refreshUnreadCount() {
   try {
@@ -164,18 +190,38 @@ function openNotificationDrawer() {
   loadNotifications()
 }
 
+// 按通知类型换算跳转页面；未知类型返回空串表示不跳转
+function jumpTargetByType(type) {
+  if (type === 'reservation_result' || type === 'reservation_reminder') return '/reservation'
+  if (type === 'repair_result') return '/repair'
+  return ''
+}
+
 async function handleClickNotification(n) {
   if (!n.is_read) {
     await markAsReadApi(n.id)
     n.is_read = true
     unreadCount.value = Math.max(0, unreadCount.value - 1)
   }
-  // 按通知类型跳转到对应页面
-  if (n.type === 'reservation_result' || n.type === 'reservation_reminder') {
-    router.push('/reservation')
-  } else if (n.type === 'repair_result') {
-    router.push('/repair')
-  }
+  const target = jumpTargetByType(n.type)
+  if (target) router.push(target)
+}
+
+// WebSocket 推送到达：未读数以服务端为准拉一次（避免本地累加与轮询结果打架），
+// 抽屉开着就顺带刷新列表；右上角弹提醒，点击跳到对应页面。
+function handleRealtimeNotification(notification) {
+  refreshUnreadCount()
+  if (drawerVisible.value) loadNotifications()
+  ElNotification({
+    title: notification.title,
+    message: notification.content,
+    type: 'info',
+    duration: 6000,
+    onClick: () => {
+      const target = jumpTargetByType(notification.type)
+      if (target) router.push(target)
+    }
+  })
 }
 
 async function handleMarkAllRead() {
@@ -196,13 +242,27 @@ onMounted(async () => {
     // 若只是临时网络故障，则允许用已缓存资料进入页面，不让界面永久卡在加载态。
     if (!unauthorized) userReady.value = true
   }
-  // 加载未读数并每 30 秒轮询一次
+  // 加载未读数并轮询兜底：WebSocket 在线时跳过轮询（实时推送已覆盖），掉线自动恢复
   refreshUnreadCount()
-  pollTimer = setInterval(refreshUnreadCount, 30000)
+  pollTimer = setInterval(() => {
+    if (!wsConnected.value) refreshUnreadCount()
+  }, 30000)
+  // 建立 WebSocket 实时通知连接（token 失效以 4401 关闭后不再重连，交给轮询）
+  if (getToken()) {
+    notificationStream = createNotificationStream({
+      onNotification: handleRealtimeNotification,
+      onStatusChange: (connected) => {
+        wsConnected.value = connected
+        // 重连成功先拉一次未读数，补上掉线期间错过的通知
+        if (connected) refreshUnreadCount()
+      }
+    })
+  }
 })
 
 onBeforeUnmount(() => {
   if (pollTimer) clearInterval(pollTimer)
+  notificationStream?.close()
 })
 
 const handleCommand = async (command) => {

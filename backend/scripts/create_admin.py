@@ -22,9 +22,9 @@ def main():
 
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
-        exists = db.query(User).filter(
-            (User.username == args.username.strip()) | (User.email == args.email.lower())
-        ).first()
+        exists = (
+            db.query(User).filter((User.username == args.username.strip()) | (User.email == args.email.lower())).first()
+        )
         if exists:
             raise SystemExit("用户名或邮箱已存在")
 

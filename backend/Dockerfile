@@ -19,11 +19,12 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# 依赖安装。国内机器默认走清华镜像加速；海外服务器可加
+# 依赖安装。requirements.txt 是当前可运行环境的完整锁定版本（含 AI 依赖）；
+# 国内机器默认走清华镜像加速，海外服务器可加
 # --build-arg PIP_INDEX=https://pypi.org/simple 换回官方源。
 ARG PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
-COPY requirements.txt requirements-ai.txt ./
-RUN pip install --no-cache-dir -i ${PIP_INDEX} -r requirements.txt -r requirements-ai.txt
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -i ${PIP_INDEX} -r requirements.txt
 
 # 复制应用代码。.dockerignore 已排除 .venv、uploads、chroma_db、.env 等。
 COPY . .

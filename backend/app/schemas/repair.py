@@ -12,6 +12,7 @@ class RepairCreate(BaseModel):
 
 class RepairHandle(BaseModel):
     """管理员处理报修：更新状态 + 填写处理备注。"""
+
     status: str  # processing / resolved
     handle_comment: str | None = Field(default=None, max_length=500)
 

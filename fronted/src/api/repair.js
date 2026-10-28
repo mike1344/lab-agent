@@ -19,3 +19,8 @@ export function getRepairDetailApi(id) {
 export function handleRepairApi(id, data) {
   return request.put(`/api/repairs/${id}/handle`, data)
 }
+
+/** 导出报修记录 Excel（管理员） */
+export function exportRepairsApi(params) {
+  return request.get('/api/repairs/export', { params, responseType: 'blob' })
+}

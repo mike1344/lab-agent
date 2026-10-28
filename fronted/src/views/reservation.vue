@@ -49,6 +49,15 @@
         <el-form-item label="审核意见">
           <el-input v-model="reviewForm.review_comment" type="textarea" :rows="4" :placeholder="reviewForm.status === 'rejected' ? '建议填写拒绝原因' : '可填写使用注意事项'" />
         </el-form-item>
+        <el-form-item v-if="reviewForm.status === 'rejected'" label="二次验证">
+          <el-input
+            v-model="reviewForm.signature_password"
+            type="password"
+            show-password
+            placeholder="请输入当前账号密码（5 分钟内已验证过可留空）"
+          />
+          <div class="signature-hint">拒绝属于危险操作，需要密码二次确认；验证有效期 5 分钟，期内重复危险操作免输。</div>
+        </el-form-item>
       </el-form>
       <template #footer><el-button @click="reviewDialogVisible = false">取消</el-button><el-button :type="reviewForm.status === 'approved' ? 'success' : 'danger'" :loading="savingValue" @click="saveReview">确认</el-button></template>
     </el-dialog>
@@ -90,7 +99,7 @@ const labList = ref([])
 const reservationList = ref([])
 const reviewDialogVisible = ref(false)
 const selectedReservation = ref(null)
-const reviewForm = reactive({ status: 'approved', review_comment: '' })
+const reviewForm = reactive({ status: 'approved', review_comment: '', signature_password: '' })
 const editDialogVisible = ref(false)
 const editForm = reactive({ reservation_date: '', start_time: '', end_time: '', purpose: '' })
 const editingId = ref(null)
@@ -98,11 +107,13 @@ const disablePastDate = (date) => date.getTime() < new Date().setHours(0, 0, 0, 
 
 const statusOptions = [
   { label: '待审核', value: 'pending' }, { label: '已通过', value: 'approved' },
-  { label: '已拒绝', value: 'rejected' }, { label: '已取消', value: 'cancelled' }
+  { label: '已拒绝', value: 'rejected' }, { label: '已取消', value: 'cancelled' },
+  { label: '已过期', value: 'expired' }
 ]
 const statusMap = {
   pending: { label: '待审核', type: 'warning' }, approved: { label: '已通过', type: 'success' },
-  rejected: { label: '已拒绝', type: 'danger' }, cancelled: { label: '已取消', type: 'info' }
+  rejected: { label: '已拒绝', type: 'danger' }, cancelled: { label: '已取消', type: 'info' },
+  expired: { label: '已过期', type: 'info' }
 }
 
 const loadReservationList = async () => {
@@ -117,14 +128,19 @@ const loadReservationList = async () => {
 const formatTime = (value) => value?.slice(0, 5) || '--:--'
 const openReviewDialog = (reservation, status) => {
   selectedReservation.value = reservation
-  Object.assign(reviewForm, { status, review_comment: '' })
+  Object.assign(reviewForm, { status, review_comment: '', signature_password: '' })
   reviewDialogVisible.value = true
 }
 
 const saveReview = async () => {
   savingValue.value = true
   try {
-    await reviewReservationApi(selectedReservation.value.id, reviewForm)
+    // 拒绝属于危险操作：密码随查询参数提交；服务端 5 分钟有效期内的免密窗口生效时可留空
+    const params =
+      reviewForm.status === 'rejected' && reviewForm.signature_password
+        ? { signature_password: reviewForm.signature_password }
+        : undefined
+    await reviewReservationApi(selectedReservation.value.id, reviewForm, params)
     ElMessage.success('预约审核完成')
     reviewDialogVisible.value = false
     await loadReservationList()
@@ -189,4 +205,5 @@ onMounted(async () => {
 
 <style scoped>
 .operation-finished { color: #c0c4cc; font-size: 13px; }
+.signature-hint { margin-top: 4px; font-size: 12px; line-height: 1.5; color: #909399; }
 </style>

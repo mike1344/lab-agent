@@ -12,6 +12,7 @@ export function updateLabApi(labId, data) {
   return request.put(`/api/labs/${labId}`, data)
 }
 
-export function deleteLabApi(labId) {
-  return request.delete(`/api/labs/${labId}`)
+/** 删除实验室：危险操作需要 signature_password 二次确认 */
+export function deleteLabApi(labId, params) {
+  return request.delete(`/api/labs/${labId}`, { params })
 }

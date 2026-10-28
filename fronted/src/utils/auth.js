@@ -1,5 +1,6 @@
 // 登录凭证统一放在这里管理，其他组件不直接操作 localStorage。
 const TOKEN_KEY = 'token'
+const REFRESH_TOKEN_KEY = 'refreshToken'
 const USER_KEY = 'userInfo'
 
 export function getToken() {
@@ -12,6 +13,18 @@ export function setToken(token) {
 
 export function removeToken() {
   localStorage.removeItem(TOKEN_KEY)
+}
+
+export function getRefreshToken() {
+  return localStorage.getItem(REFRESH_TOKEN_KEY)
+}
+
+export function setRefreshToken(token) {
+  localStorage.setItem(REFRESH_TOKEN_KEY, token)
+}
+
+export function removeRefreshToken() {
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
 }
 
 export function getUserInfo() {
@@ -37,5 +50,6 @@ export function removeUserInfo() {
 
 export function logout() {
   removeToken()
+  removeRefreshToken()
   removeUserInfo()
 }

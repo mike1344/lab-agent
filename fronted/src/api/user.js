@@ -24,8 +24,9 @@ export function updateUserApi(userId, data) {
   return request.put(`/api/user/${userId}`, data)
 }
 
-export function deleteUserApi(userId) {
-  return request.delete(`/api/user/${userId}`)
+/** 删除用户：危险操作需要 signature_password 二次确认 */
+export function deleteUserApi(userId, params) {
+  return request.delete(`/api/user/${userId}`, { params })
 }
 
 export function adminResetPasswordApi(userId, data) {
@@ -36,4 +37,9 @@ export function uploadImageApi(file) {
   const formData = new FormData()
   formData.append('file', file)
   return request.post('/api/upload/image', formData)
+}
+
+/** 导出用户列表 Excel（管理员） */
+export function exportUsersApi(params) {
+  return request.get('/api/user/export', { params, responseType: 'blob' })
 }

@@ -22,6 +22,30 @@
       </article>
     </section>
 
+    <section v-loading="chartsLoading" class="charts-grid">
+      <article class="chart-card chart-wide">
+        <div class="chart-head">
+          <h2>{{ isAdmin ? '全部预约趋势' : '我的预约趋势' }}</h2>
+          <el-radio-group v-model="trendDays" size="small" @change="loadDashboard">
+            <el-radio-button :value="7">近 7 天</el-radio-button>
+            <el-radio-button :value="30">近 30 天</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div ref="trendRef" class="chart-body"></div>
+        <div v-if="trendTotal === 0" class="chart-empty">近期暂无预约数据</div>
+      </article>
+      <article class="chart-card">
+        <h2>实验室使用排行</h2>
+        <div ref="usageRef" class="chart-body"></div>
+        <div v-if="!dashboard.lab_usage.length" class="chart-empty">暂无使用数据</div>
+      </article>
+      <article class="chart-card">
+        <h2>报修状态分布</h2>
+        <div ref="repairRef" class="chart-body"></div>
+        <div v-if="!dashboard.repair_status.length" class="chart-empty">暂无报修数据</div>
+      </article>
+    </section>
+
     <section class="guide-card">
       <h2>预约流程</h2>
       <el-steps :active="1" align-center>
@@ -35,17 +59,51 @@
 </template>
 
 <script setup>
-import { computed, markRaw, onMounted, reactive, ref } from 'vue'
+import { computed, markRaw, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, Calendar, Collection, Monitor, User } from '@element-plus/icons-vue'
-import { getSummaryApi } from '@/api/stats'
+import * as echarts from 'echarts/core'
+import { BarChart, PieChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import { getDashboardApi, getSummaryApi } from '@/api/stats'
 import { useUser } from '@/utils/user'
+
+// 按需注册：只引入本项目用到的图表类型与组件，避免整包引入 echarts（约 1MB）。
+echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
+
+const RESERVATION_STATUS_META = [
+  { key: 'pending', label: '待审核', color: '#e6a23c' },
+  { key: 'approved', label: '已通过', color: '#67c23a' },
+  { key: 'rejected', label: '已拒绝', color: '#f56c6c' },
+  { key: 'cancelled', label: '已取消', color: '#909399' },
+  { key: 'expired', label: '已过期', color: '#c0c4cc' }
+]
+const REPAIR_STATUS_META = {
+  pending: { label: '待处理', color: '#e6a23c' },
+  processing: { label: '处理中', color: '#409eff' },
+  resolved: { label: '已解决', color: '#67c23a' }
+}
 
 const router = useRouter()
 const { userInfo, isAdmin } = useUser()
 const loadingValue = ref(false)
 const summary = reactive({})
 const displayName = computed(() => userInfo.value?.full_name || userInfo.value?.username || '同学')
+
+const chartsLoading = ref(false)
+const trendDays = ref(7)
+const dashboard = reactive({ reservation_trend: [], lab_usage: [], repair_status: [] })
+const trendRef = ref(null)
+const usageRef = ref(null)
+const repairRef = ref(null)
+let trendChart = null
+let usageChart = null
+let repairChart = null
+
+const trendTotal = computed(() =>
+  dashboard.reservation_trend.reduce((sum, day) => sum + day.pending + day.approved + day.rejected + day.cancelled, 0)
+)
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -69,6 +127,81 @@ const goTo = (path) => {
   if (path) router.push(path)
 }
 
+const loadDashboard = async () => {
+  chartsLoading.value = true
+  try {
+    const res = await getDashboardApi({ days: trendDays.value })
+    dashboard.reservation_trend = res.data.reservation_trend || []
+    dashboard.lab_usage = res.data.lab_usage || []
+    dashboard.repair_status = res.data.repair_status || []
+    renderCharts()
+  } finally {
+    chartsLoading.value = false
+  }
+}
+
+// 三个图共用一次请求的数据；div 始终挂在 DOM 上（不用 v-show），保证 echarts.init 拿得到尺寸。
+const renderCharts = () => {
+  if (!trendRef.value || !usageRef.value || !repairRef.value) return
+
+  trendChart = trendChart || echarts.init(trendRef.value)
+  trendChart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { bottom: 0, itemWidth: 12, itemHeight: 8 },
+    grid: { left: 8, right: 8, top: 24, bottom: 34, containLabel: true },
+    xAxis: { type: 'category', data: dashboard.reservation_trend.map((day) => day.date.slice(5)) },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: RESERVATION_STATUS_META.map((meta) => ({
+      name: meta.label,
+      type: 'bar',
+      stack: 'total',
+      barMaxWidth: 26,
+      itemStyle: { color: meta.color },
+      data: dashboard.reservation_trend.map((day) => day[meta.key])
+    }))
+  })
+
+  usageChart = usageChart || echarts.init(usageRef.value)
+  // 横向条形图自下而上绘制，先反转让次数最多的实验室显示在最上面。
+  const usage = [...dashboard.lab_usage].reverse()
+  usageChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 8, right: 28, top: 8, bottom: 8, containLabel: true },
+    xAxis: { type: 'value', minInterval: 1 },
+    yAxis: { type: 'category', data: usage.map((item) => item.lab_name), axisLabel: { width: 96, overflow: 'truncate' } },
+    series: [{
+      type: 'bar',
+      barMaxWidth: 18,
+      itemStyle: { color: '#409eff', borderRadius: [0, 6, 6, 0] },
+      data: usage.map((item) => item.count)
+    }]
+  })
+
+  repairChart = repairChart || echarts.init(repairRef.value)
+  repairChart.setOption({
+    tooltip: { trigger: 'item', formatter: '{b}：{c} 条（{d}%）' },
+    legend: { bottom: 0, itemWidth: 12, itemHeight: 8 },
+    series: [{
+      type: 'pie',
+      radius: ['42%', '66%'],
+      center: ['50%', '44%'],
+      itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+      label: { formatter: '{b}\n{c} 条' },
+      data: dashboard.repair_status.map((item) => ({
+        name: REPAIR_STATUS_META[item.status]?.label || item.status,
+        value: item.count,
+        itemStyle: { color: REPAIR_STATUS_META[item.status]?.color }
+      }))
+    }]
+  })
+}
+
+const handleResize = () => {
+  trendChart?.resize()
+  usageChart?.resize()
+  repairChart?.resize()
+}
+
 onMounted(async () => {
   loadingValue.value = true
   try {
@@ -77,6 +210,15 @@ onMounted(async () => {
   } finally {
     loadingValue.value = false
   }
+  window.addEventListener('resize', handleResize)
+  await loadDashboard()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  trendChart?.dispose()
+  usageChart?.dispose()
+  repairChart?.dispose()
 })
 </script>
 
@@ -95,4 +237,29 @@ onMounted(async () => {
 .stat-icon { display: grid; width: 50px; height: 50px; place-items: center; border-radius: 12px; color: #409eff; font-size: 24px; }
 .stat-card strong { display: block; margin-top: 5px; font-size: 28px; }
 .guide-card h2 { margin-bottom: 28px; font-size: 18px; }
+
+/* —— 首页统计图表 —— */
+.charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.chart-wide { grid-column: 1 / -1; }
+.chart-card {
+  position: relative;
+  padding: 20px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(31, 45, 61, 0.05);
+}
+.chart-card h2 { font-size: 16px; }
+.chart-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.chart-body { height: 300px; }
+.chart-empty {
+  position: absolute;
+  left: 0; right: 0; top: 60px; bottom: 0;
+  display: grid; place-items: center;
+  color: #909399; font-size: 13px;
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 0 0 12px 12px;
+}
+@media (max-width: 900px) {
+  .charts-grid { grid-template-columns: 1fr; }
+}
 </style>

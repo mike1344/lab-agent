@@ -50,6 +50,26 @@ const router = createRouter({
           path: 'repair',
           name: 'Repair',
           component: () => import('@/views/repair.vue')
+        },
+        {
+          path: 'oplog',
+          name: 'Oplog',
+          component: () => import('@/views/oplog.vue')
+        },
+        {
+          path: 'procurement',
+          name: 'Procurement',
+          component: () => import('@/views/procurement.vue')
+        },
+        {
+          path: 'course',
+          name: 'Course',
+          component: () => import('@/views/course.vue')
+        },
+        {
+          path: 'report',
+          name: 'Report',
+          component: () => import('@/views/report.vue')
         }
       ]
     },

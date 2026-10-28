@@ -11,7 +11,6 @@ https://lab.cs.tsinghua.edu.cn/
 from app.database import Base, SessionLocal, engine
 from app.models import Equipment, Lab, Reservation, User  # noqa: F401
 
-
 # 名称来自官方公开页面；其余字段是为了演示预约系统而补充的模拟数据。
 LABS = [
     {

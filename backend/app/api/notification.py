@@ -18,10 +18,7 @@ def get_my_notifications(
 ):
     """我的通知列表，按时间倒序。"""
     items = (
-        db.query(Notification)
-        .filter(Notification.user_id == current_user.id)
-        .order_by(Notification.id.desc())
-        .all()
+        db.query(Notification).filter(Notification.user_id == current_user.id).order_by(Notification.id.desc()).all()
     )
     return Response.success(
         data=[
@@ -75,7 +72,8 @@ def mark_all_as_read(
 ):
     """一键全部已读。"""
     db.query(Notification).filter(
-        Notification.user_id == current_user.id, Notification.is_read == False  # noqa: E712
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,  # noqa: E712
     ).update({"is_read": True})
     db.commit()
     return Response.success(message="全部已读")

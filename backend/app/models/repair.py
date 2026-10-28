@@ -12,7 +12,9 @@ class Repair(Base):
 
     reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True, comment="报修人ID")
     lab_id: Mapped[int | None] = mapped_column(ForeignKey("labs.id"), nullable=True, index=True, comment="关联实验室ID")
-    equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"), nullable=True, index=True, comment="关联设备ID")
+    equipment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("equipment.id"), nullable=True, index=True, comment="关联设备ID"
+    )
 
     title: Mapped[str] = mapped_column(String(200), nullable=False, comment="报修标题")
     description: Mapped[str] = mapped_column(Text, nullable=False, comment="故障描述")

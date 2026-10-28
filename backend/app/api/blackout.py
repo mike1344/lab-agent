@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends
 from datetime import date, time
 
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.common.exceptions import BusinessException
@@ -10,7 +11,6 @@ from app.dependencies.auth import get_current_user
 from app.dependencies.permission import get_current_admin
 from app.models.blackout import BlackoutPeriod
 from app.models.user import User
-from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/blackouts", tags=["不可约时段"])
 

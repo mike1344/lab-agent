@@ -7,6 +7,8 @@ from app.common.response import BizCode, Response
 from app.database import get_db
 from app.dependencies.auth import get_current_user
 from app.dependencies.permission import get_current_admin
+from app.dependencies.signature import require_signature
+from app.models.favorite import Favorite
 from app.models.lab import Lab
 from app.models.user import User
 from app.schemas.lab import LabCreate, LabResponse, LabUpdate
@@ -18,15 +20,26 @@ router = APIRouter(prefix="/labs", tags=["实验室管理"])
 def get_lab_list(
     keyword: str = "",
     only_open: bool = False,
-    _: User = Depends(get_current_user),
+    favorite_only: bool = False,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """查询实验室列表；学生端通过 only_open 只展示开放实验室。"""
+    """查询实验室列表；only_open 只展示开放实验室，favorite_only 只看我的收藏。"""
     query = db.query(Lab)
     if keyword.strip():
         query = query.filter(Lab.name.like(f"%{keyword.strip()}%"))
     if only_open:
         query = query.filter(Lab.status == 1)
+    if favorite_only:
+        # 子查询由数据库完成过滤，避免把所有实验室拉到应用层再筛选。
+        query = query.filter(
+            Lab.id.in_(
+                db.query(Favorite.target_id).filter(
+                    Favorite.user_id == current_user.id,
+                    Favorite.target_type == "lab",
+                )
+            )
+        )
     labs = query.order_by(Lab.id.desc()).all()
     return Response.success(data=[LabResponse.model_validate(lab) for lab in labs])
 
@@ -74,6 +87,7 @@ def update_lab(
 def delete_lab(
     lab_id: int,
     _: User = Depends(get_current_admin),
+    _sig: User = Depends(require_signature),
     db: Session = Depends(get_db),
 ):
     lab = db.get(Lab, lab_id)

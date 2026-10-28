@@ -2,27 +2,158 @@ from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.common.exceptions import BusinessException
 from app.models.announcement import Announcement
 from app.models.blackout import BlackoutPeriod
 from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.reservation import Reservation
-from app.common.exceptions import BusinessException
 from app.schemas.reservation import ReservationCreate
 from app.services.reservation import create_reservation_record
 
-
 TOOL_SCHEMAS = [
-    {"type": "function", "function": {"name": "list_open_labs", "description": "查询当前开放的实验室以及可用设备", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "search_lab_docs", "description": "查询实验室预约规则、设备使用规范等知识库文档", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"], "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "create_lab_reservation", "description": "信息完整并得到用户明确要求后，创建实验室预约", "parameters": {"type": "object", "properties": {"lab_id": {"type": "integer"}, "reservation_date": {"type": "string", "description": "YYYY-MM-DD"}, "start_time": {"type": "string", "description": "HH:MM"}, "end_time": {"type": "string", "description": "HH:MM"}, "purpose": {"type": "string"}}, "required": ["lab_id", "reservation_date", "start_time", "end_time", "purpose"], "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "get_my_reservations", "description": "查询当前用户的预约记录，可按状态筛选", "parameters": {"type": "object", "properties": {"status": {"type": "string", "enum": ["pending", "approved", "rejected", "cancelled"], "description": "预约状态，留空查全部"}}, "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "cancel_reservation", "description": "取消用户自己的预约，需要提供预约ID", "parameters": {"type": "object", "properties": {"reservation_id": {"type": "integer", "description": "要取消的预约ID"}}, "required": ["reservation_id"], "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "check_lab_availability", "description": "查询某实验室某天哪些时段已被占用或不可约", "parameters": {"type": "object", "properties": {"lab_id": {"type": "integer"}, "reservation_date": {"type": "string", "description": "YYYY-MM-DD"}}, "required": ["lab_id", "reservation_date"], "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "get_latest_announcements", "description": "查询系统最新公告", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "recommend_lab", "description": "根据日期、时间段偏好和需要时长，智能推荐有空位的实验室。学生说想什么时候做实验但没指定实验室时用这个工具", "parameters": {"type": "object", "properties": {"reservation_date": {"type": "string", "description": "YYYY-MM-DD"}, "period": {"type": "string", "enum": ["morning", "afternoon", "evening"], "description": "偏好时段：上午=8-12点，下午=13-18点，晚上=18-22点"}, "duration_hours": {"type": "integer", "description": "需要几小时，默认2"}}, "required": ["reservation_date", "period"], "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "get_today", "description": "获取今天的日期和星期几。用户说今天、明天、后天时先用这个换算成具体日期", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}, "strict": True},
-    {"type": "function", "function": {"name": "list_lab_equipments", "description": "查询所有实验室的设备列表，包括设备名、数量和所属实验室", "parameters": {"type": "object", "properties": {}, "additionalProperties": False}}, "strict": True},
+    {
+        "type": "function",
+        "function": {
+            "name": "list_open_labs",
+            "description": "查询当前开放的实验室以及可用设备",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_lab_docs",
+            "description": "查询实验室预约规则、设备使用规范等知识库文档",
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_lab_reservation",
+            "description": "信息完整并得到用户明确要求后，创建实验室预约",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lab_id": {"type": "integer"},
+                    "reservation_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "start_time": {"type": "string", "description": "HH:MM"},
+                    "end_time": {"type": "string", "description": "HH:MM"},
+                    "purpose": {"type": "string"},
+                },
+                "required": ["lab_id", "reservation_date", "start_time", "end_time", "purpose"],
+                "additionalProperties": False,
+            },
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_my_reservations",
+            "description": "查询当前用户的预约记录，可按状态筛选",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "approved", "rejected", "cancelled"],
+                        "description": "预约状态，留空查全部",
+                    }
+                },
+                "additionalProperties": False,
+            },
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancel_reservation",
+            "description": "取消用户自己的预约，需要提供预约ID",
+            "parameters": {
+                "type": "object",
+                "properties": {"reservation_id": {"type": "integer", "description": "要取消的预约ID"}},
+                "required": ["reservation_id"],
+                "additionalProperties": False,
+            },
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_lab_availability",
+            "description": "查询某实验室某天哪些时段已被占用或不可约",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lab_id": {"type": "integer"},
+                    "reservation_date": {"type": "string", "description": "YYYY-MM-DD"},
+                },
+                "required": ["lab_id", "reservation_date"],
+                "additionalProperties": False,
+            },
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_latest_announcements",
+            "description": "查询系统最新公告",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recommend_lab",
+            "description": "根据日期、时间段偏好和需要时长，智能推荐有空位的实验室。学生说想什么时候做实验但没指定实验室时用这个工具",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reservation_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "period": {
+                        "type": "string",
+                        "enum": ["morning", "afternoon", "evening"],
+                        "description": "偏好时段：上午=8-12点，下午=13-18点，晚上=18-22点",
+                    },
+                    "duration_hours": {"type": "integer", "description": "需要几小时，默认2"},
+                },
+                "required": ["reservation_date", "period"],
+                "additionalProperties": False,
+            },
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_today",
+            "description": "获取今天的日期和星期几。用户说今天、明天、后天时先用这个换算成具体日期",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_lab_equipments",
+            "description": "查询所有实验室的设备列表，包括设备名、数量和所属实验室",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        "strict": True,
+    },
 ]
 
 
@@ -32,9 +163,13 @@ def list_open_labs(db: Session) -> str:
         return "当前没有开放的实验室。"
     lines = []
     for lab in labs:
-        equipment = db.query(Equipment).filter(Equipment.lab_id == lab.id, Equipment.status == 1, Equipment.quantity > 0).all()
+        equipment = (
+            db.query(Equipment).filter(Equipment.lab_id == lab.id, Equipment.status == 1, Equipment.quantity > 0).all()
+        )
         equipment_text = "、".join(f"{item.name}×{item.quantity}" for item in equipment) or "暂无登记设备"
-        lines.append(f"实验室ID {lab.id}：{lab.name}，位置 {lab.location}，容量 {lab.capacity} 人；设备：{equipment_text}")
+        lines.append(
+            f"实验室ID {lab.id}：{lab.name}，位置 {lab.location}，容量 {lab.capacity} 人；设备：{equipment_text}"
+        )
     return "\n".join(lines)
 
 
@@ -51,6 +186,7 @@ def create_lab_reservation(db: Session, user_id: int, arguments: dict) -> str:
 
     # 自动获取用户姓名，不用问用户
     from app.models.user import User
+
     user = db.query(User).filter(User.id == user_id).first()
     user_label = user.full_name or user.username if user else f"用户#{user_id}"
 
@@ -82,7 +218,9 @@ def get_my_reservations(db: Session, user_id: int, status: str | None = None) ->
     lines = [f"预约共 {len(items)} 条："]
     for r in items:
         lab_name = r.lab.name if r.lab else "未知"
-        lines.append(f"#{r.id} {lab_name} {r.reservation_date} {r.start_time.strftime('%H:%M')}-{r.end_time.strftime('%H:%M')} [{status_map.get(r.status, r.status)}] 用途：{r.purpose}")
+        lines.append(
+            f"#{r.id} {lab_name} {r.reservation_date} {r.start_time.strftime('%H:%M')}-{r.end_time.strftime('%H:%M')} [{status_map.get(r.status, r.status)}] 用途：{r.purpose}"
+        )
     return "\n".join(lines)
 
 
@@ -107,21 +245,33 @@ def check_lab_availability(db: Session, lab_id: int, reservation_date: str) -> s
     lab = db.query(Lab).filter(Lab.id == lab_id).first()
     if not lab:
         return f"实验室 #{lab_id} 不存在。"
-    items = db.query(Reservation).filter(
-        Reservation.lab_id == lab_id,
-        Reservation.reservation_date == d,
-        Reservation.status.in_(["pending", "approved"]),
-    ).order_by(Reservation.start_time).all()
-    blackouts = db.query(BlackoutPeriod).filter(
-        BlackoutPeriod.lab_id == lab_id,
-        BlackoutPeriod.blackout_date == d,
-    ).order_by(BlackoutPeriod.start_time).all()
+    items = (
+        db.query(Reservation)
+        .filter(
+            Reservation.lab_id == lab_id,
+            Reservation.reservation_date == d,
+            Reservation.status.in_(["pending", "approved"]),
+        )
+        .order_by(Reservation.start_time)
+        .all()
+    )
+    blackouts = (
+        db.query(BlackoutPeriod)
+        .filter(
+            BlackoutPeriod.lab_id == lab_id,
+            BlackoutPeriod.blackout_date == d,
+        )
+        .order_by(BlackoutPeriod.start_time)
+        .all()
+    )
     if not items and not blackouts:
         return f"{lab.name} {reservation_date} 全天空闲，没有已占用或不可约时段。"
     lines = [f"{lab.name} {reservation_date} 不可用时段："]
     for r in items:
         st = "已通过" if r.status == "approved" else "待审核"
-        lines.append(f"  {r.start_time.strftime('%H:%M')}-{r.end_time.strftime('%H:%M')}（{r.user.full_name if r.user else '?'}，{st}）")
+        lines.append(
+            f"  {r.start_time.strftime('%H:%M')}-{r.end_time.strftime('%H:%M')}（{r.user.full_name if r.user else '?'}，{st}）"
+        )
     for b in blackouts:
         lines.append(f"  {b.start_time.strftime('%H:%M')}-{b.end_time.strftime('%H:%M')}（不可约：{b.reason}）")
     return "\n".join(lines)
@@ -174,20 +324,27 @@ def recommend_lab(db: Session, reservation_date: str, period: str, duration_hour
 
     results = []
     for lab in labs:
-        occupied = db.query(Reservation).filter(
-            Reservation.lab_id == lab.id,
-            Reservation.reservation_date == d,
-            Reservation.status.in_(["pending", "approved"]),
-        ).all()
-        blackouts = db.query(BlackoutPeriod).filter(
-            BlackoutPeriod.lab_id == lab.id,
-            BlackoutPeriod.blackout_date == d,
-        ).all()
+        occupied = (
+            db.query(Reservation)
+            .filter(
+                Reservation.lab_id == lab.id,
+                Reservation.reservation_date == d,
+                Reservation.status.in_(["pending", "approved"]),
+            )
+            .all()
+        )
+        blackouts = (
+            db.query(BlackoutPeriod)
+            .filter(
+                BlackoutPeriod.lab_id == lab.id,
+                BlackoutPeriod.blackout_date == d,
+            )
+            .all()
+        )
 
         # 预约与不可约时段合并成统一占用列表，再找该时段内最长的空闲段。
         blocked = sorted(
-            [(r.start_time, r.end_time) for r in occupied]
-            + [(b.start_time, b.end_time) for b in blackouts]
+            [(r.start_time, r.end_time) for r in occupied] + [(b.start_time, b.end_time) for b in blackouts]
         )
         free_starts = range_start
         best_free = None
@@ -210,9 +367,11 @@ def recommend_lab(db: Session, reservation_date: str, period: str, duration_hour
 
         if best_free:
             # 查这个实验室的设备
-            equipments = db.query(Equipment).filter(
-                Equipment.lab_id == lab.id, Equipment.status == 1, Equipment.quantity > 0
-            ).all()
+            equipments = (
+                db.query(Equipment)
+                .filter(Equipment.lab_id == lab.id, Equipment.status == 1, Equipment.quantity > 0)
+                .all()
+            )
             equip_text = "、".join(f"{e.name}×{e.quantity}" for e in equipments) or "无"
             start_dt = datetime.combine(d, best_free[0])
             end_dt = start_dt + timedelta(hours=duration_hours)
@@ -224,7 +383,9 @@ def recommend_lab(db: Session, reservation_date: str, period: str, duration_hour
 
     if not results:
         return f"{reservation_date} 在该时段没有实验室能腾出 {duration_hours} 小时连续空位，建议换个时间段。"
-    return f"以下实验室在 {reservation_date} {period} 有空位（已为你选好{duration_hours}小时时段）：\n\n" + "\n\n".join(results)
+    return f"以下实验室在 {reservation_date} {period} 有空位（已为你选好{duration_hours}小时时段）：\n\n" + "\n\n".join(
+        results
+    )
 
 
 def get_today() -> str:
@@ -241,7 +402,12 @@ def get_today() -> str:
 
 def list_lab_equipments(db: Session) -> str:
     """查询所有设备。"""
-    items = db.query(Equipment).filter(Equipment.status == 1, Equipment.quantity > 0).order_by(Equipment.lab_id, Equipment.id).all()
+    items = (
+        db.query(Equipment)
+        .filter(Equipment.status == 1, Equipment.quantity > 0)
+        .order_by(Equipment.lab_id, Equipment.id)
+        .all()
+    )
     if not items:
         return "当前没有登记可用设备。"
     lines = []
@@ -251,5 +417,5 @@ def list_lab_equipments(db: Session) -> str:
         if lab_name != current_lab:
             lines.append(f"【{lab_name}】")
             current_lab = lab_name
-        lines.append(f"  {eq.name}：{eq.quantity} 台，位置：{eq.location or '-'}")
+        lines.append(f"  {eq.name}：{eq.quantity} 台")
     return "\n".join(lines)

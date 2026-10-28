@@ -33,6 +33,29 @@
           />
         </el-form-item>
 
+        <!-- 图形验证码：后端关闭验证码时整行隐藏 -->
+        <el-form-item v-if="captcha.enabled" prop="captcha_code">
+          <div class="captcha-row">
+            <el-input
+              v-model="form.captcha_code"
+              :prefix-icon="Key"
+              size="large"
+              placeholder="请输入验证码"
+              maxlength="4"
+              autocomplete="off"
+              @keyup.enter="login"
+            />
+            <img
+              v-if="captcha.image"
+              :src="captcha.image"
+              alt="验证码"
+              title="看不清？点击刷新"
+              class="captcha-image"
+              @click="refreshCaptcha"
+            />
+          </div>
+        </el-form-item>
+
         <el-button
           type="primary"
           size="large"
@@ -53,11 +76,11 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
-import { User, Lock } from '@element-plus/icons-vue'
+import { onMounted, reactive, ref } from 'vue'
+import { Key, Lock, User } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { loginApi } from '@/api/auth'
+import { getCaptchaApi, loginApi } from '@/api/auth'
 import { useUser } from '@/utils/user'
 import logo from '@/assets/css/images/logo.png'
 
@@ -69,13 +92,50 @@ const loadingValue = ref(false)
 
 const form = reactive({
   username: '',
-  password: ''
+  password: '',
+  captcha_code: ''
+})
+
+// 验证码凭据：enabled=false 时后端没开验证码，不展示也不校验
+const captcha = reactive({
+  enabled: false,
+  captcha_id: '',
+  image: ''
 })
 
 const rules = {
   username: [{ required: true, whitespace: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  captcha_code: [
+    {
+      // 自定义校验：只在验证码开启时要求填写
+      validator: (_, value, callback) => {
+        if (captcha.enabled && !String(value || '').trim()) {
+          callback(new Error('请输入验证码'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur'
+    }
+  ]
 }
+
+// 拉取（或刷新）一张新验证码，同时清空已输入的内容
+const refreshCaptcha = async () => {
+  try {
+    const res = await getCaptchaApi()
+    captcha.enabled = Boolean(res.data?.enabled)
+    captcha.captcha_id = res.data?.captcha_id || ''
+    captcha.image = res.data?.image || ''
+  } catch {
+    // 验证码接口异常时不阻断登录表单（后端若开启验证码会明确拒绝登录）
+    captcha.enabled = false
+  }
+  form.captcha_code = ''
+}
+
+onMounted(refreshCaptcha)
 
 const login = async () => {
   const valid = await loginFormRef.value?.validate().catch(() => false)
@@ -85,7 +145,9 @@ const login = async () => {
   try {
     const res = await loginApi({
       username: form.username.trim(),
-      password: form.password
+      password: form.password,
+      captcha_id: captcha.enabled ? captcha.captcha_id : '',
+      captcha_code: captcha.enabled ? form.captcha_code.trim() : ''
     })
     saveLoginData(res.data)
     ElMessage.success('登录成功')
@@ -93,6 +155,9 @@ const login = async () => {
     // 如果用户是被路由守卫拦下的，登录后回到原页面，否则进入首页。
     const redirectPath = typeof route.query.redirect === 'string' ? route.query.redirect : '/home'
     await router.replace(redirectPath)
+  } catch {
+    // 登录失败（密码错误/验证码错误/账号锁定）：验证码已一次性消费，立刻换一张
+    await refreshCaptcha()
   } finally {
     loadingValue.value = false
   }
@@ -143,6 +208,23 @@ const login = async () => {
 
 .submit-button {
   width: 100%;
+}
+
+/* 验证码行：输入框占满剩余宽度，图片固定高度可点击刷新 */
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.captcha-image {
+  height: 40px;
+  padding: 0 4px;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .auth-link {

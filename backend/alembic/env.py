@@ -6,12 +6,11 @@
     alembic stamp head                            # 老库（表已存在）只登记版本号，不执行 DDL
 """
 
-from alembic import context
-from sqlalchemy import create_engine, pool
-
 import app.models  # noqa: F401 - 导入全部 ORM 模型，autogenerate 依赖这些元数据做对比
+from alembic import context
 from app.config import settings
 from app.database import Base
+from sqlalchemy import create_engine, pool
 
 # 目标表结构：应用全部 ORM 模型的元数据
 target_metadata = Base.metadata

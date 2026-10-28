@@ -8,6 +8,10 @@ export function getReservationSlotsApi(params) {
   return request.get('/api/reservations/slots', { params })
 }
 
+export function getReservationCalendarApi(params) {
+  return request.get('/api/reservations/calendar', { params })
+}
+
 export function getMyReservationListApi(params) {
   return request.get('/api/reservations/mine', { params })
 }
@@ -20,8 +24,8 @@ export function getReservationListApi(params) {
   return request.get('/api/reservations', { params })
 }
 
-export function reviewReservationApi(reservationId, data) {
-  return request.put(`/api/reservations/${reservationId}/review`, data)
+export function reviewReservationApi(reservationId, data, params) {
+  return request.put(`/api/reservations/${reservationId}/review`, data, { params })
 }
 
 export function updateReservationApi(reservationId, data) {

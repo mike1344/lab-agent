@@ -174,3 +174,38 @@ docker run --rm -v lab_agent_uploads_data:/data -v "$PWD":/backup alpine sh -c '
 - 前端：`npm run build` 后把 `fronted/dist` 交给 Nginx，站点配置照抄 `fronted/nginx.conf` 的三件事：
   `try_files ... /index.html` 回退、`/api` 反代并关闭缓冲、`/uploads` 反代。
 - 本项目的 Docker 方案就是把以上步骤固化成了镜像，逻辑一一对应。
+
+## 7. 多环境分离（dev / staging / prod）
+
+配置模板已内置，复制对应文件为 `backend/.env` 即可，敏感值一律不进仓库：
+
+| 环境 | 模板 | 关键差异 |
+| --- | --- | --- |
+| 开发 | `backend/.env.example` | `AUTO_CREATE_TABLES=true`、验证码/邮件可关、日志 DEBUG 可选 |
+| 预发 | `backend/.env.staging.example` | `AUTO_CREATE_TABLES=false`、`SENTRY_ENVIRONMENT=staging`、限流与验证码全开、Sentry 采样 0.1 |
+| 生产 | `backend/.env.production.example` | `AUTO_CREATE_TABLES=false`、验证码锁定 30 分钟、限流收紧、`SMTP_USE_TLS=false`（465 端口隐式 TLS 场景）、Sentry 采样 0.2 |
+
+约定与建议：
+
+1. **密钥管理**：`JWT_SECRET_KEY`、数据库密码、SMTP 密码、Sentry DSN 由 CI/CD 的 secrets 或容器编排的 secrets 注入，`.env` 只存在于服务器本地（已被 `.gitignore` 忽略）。
+2. **表结构**：staging/prod 一律 `AUTO_CREATE_TABLES=false`，部署流程固定为「`alembic upgrade head` → 启动服务」。
+3. **定时任务**：多副本部署时只在专用实例设 `SCHEDULER_ENABLED=true`，其余实例 false，避免重复通知。
+4. **可观测性**：staging/prod 设置 `SENTRY_DSN` 与 `SENTRY_ENVIRONMENT`，`/metrics` 交给 Prometheus 抓取，`/ready` 交给负载均衡做就绪检查。
+5. **回滚**：发布前打 tag；数据库迁移遵循「先兼容后清理」——新增列先 nullable + 应用兼容，下个版本再收紧，避免滚动升级期间老代码读新表失败。
+
+## 8. 自动备份与恢复演练
+
+仓库内置 `scripts/backup.sh`：MySQL 全量导出（`--single-transaction`）+ uploads 数据卷打包，按天保留（默认 30 天，可用 `RETENTION_DAYS` 调整）。
+
+```bash
+# 宿主机 crontab：每天 03:00 备份到 /data/backups
+0 3 * * * cd /opt/lab_agent && ./scripts/backup.sh /data/backups >> /var/log/lab_agent_backup.log 2>&1
+```
+
+恢复演练（每季度一次，务必在 staging 上执行）：
+
+1. 新建空库并导入最近一次备份（`gunzip -c db_*.sql.gz | mysql ...`）；
+2. 解包 uploads 到数据卷，按 DEPLOY 流程启动服务；
+3. 抽查：登录、预约列表、头像/说明书图片可访问、报表中心机时统计与备份前一致；
+4. 记录 RTO（恢复耗时）与 RPO（最近一次成功备份距今），建议 RPO ≤ 24h、RTO ≤ 1h；
+5. 备份文件异地存放一份（对象存储或另一台机器），避免单机磁盘故障把备份一起带走。

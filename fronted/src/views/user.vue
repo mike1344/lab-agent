@@ -36,6 +36,7 @@
           <el-input v-model="searchParams.keyword" clearable placeholder="用户名、姓名或邮箱" style="width: 240px" @keyup.enter="loadUserList" @clear="loadUserList" />
           <el-button @click="loadUserList">查询</el-button>
           <el-button type="primary" @click="openUserDialog()">新增用户</el-button>
+          <el-button @click="exportUserList">导出用户</el-button>
         </div>
         <el-table v-loading="loadingValue" :data="userList" stripe>
           <el-table-column prop="username" label="用户名" min-width="110" />
@@ -77,7 +78,9 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { adminResetPasswordApi, createUserApi, deleteUserApi, getUserListApi, updatePasswordApi, updateProfileApi, updateUserApi, uploadImageApi } from '@/api/user'
+import { adminResetPasswordApi, createUserApi, deleteUserApi, exportUsersApi, getUserListApi, updatePasswordApi, updateProfileApi, updateUserApi, uploadImageApi } from '@/api/user'
+import { downloadBlobResponse } from '@/utils/download'
+import { promptSignature } from '@/utils/confirm'
 import { useUser } from '@/utils/user'
 
 const router = useRouter()
@@ -147,7 +150,9 @@ const handleUploadChange = async (uploadFile) => {
   uploadingValue.value = true
   try {
     const res = await uploadImageApi(uploadFile.raw)
-    const url = `${import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'}${res.data.url}`
+    // 同源部署时基地址是 "/"，直接拼会得到 "//uploads/..."（浏览器会把它当成主机名 uploads）。
+    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
+    const url = `${apiBaseUrl}${res.data.url}`
     uploadedImageUrl.value = url
     // 自动保存到用户资料
     const profileRes = await updateProfileApi({ email: profileForm.email.trim(), full_name: profileForm.full_name.trim() || null, avatar_url: url })
@@ -187,12 +192,9 @@ const saveUser = async () => {
 }
 
 const removeUser = async (user) => {
-  try {
-    await ElMessageBox.confirm(`确定删除用户”${user.username}”吗？`, '删除确认', { type: 'warning' })
-  } catch {
-    return
-  }
-  await deleteUserApi(user.id)
+  const password = await promptSignature(`确定删除用户“${user.username}”吗？此操作需要输入当前账号密码确认。`)
+  if (password === null) return
+  await deleteUserApi(user.id, { signature_password: password })
   ElMessage.success('删除成功')
   await loadUserList()
 }
@@ -213,6 +215,11 @@ const saveResetPassword = async () => {
 }
 
 const formatDate = (value) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
+
+const exportUserList = async () => {
+  const res = await exportUsersApi({ keyword: searchParams.keyword })
+  downloadBlobResponse(res, '用户列表.xlsx')
+}
 
 onMounted(async () => {
   Object.assign(profileForm, { full_name: userInfo.value?.full_name || '', email: userInfo.value?.email || '' })
