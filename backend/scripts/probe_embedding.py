@@ -11,9 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from openai import OpenAI  # noqa: E402
-
 from app.config import settings  # noqa: E402
+from openai import OpenAI  # noqa: E402
 
 
 def main() -> None:

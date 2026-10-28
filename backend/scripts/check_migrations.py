@@ -60,10 +60,7 @@ def main() -> None:
 
         connection = sqlite3.connect(database)
         try:
-            tables = {
-                row[0]
-                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-            }
+            tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         finally:
             connection.close()
         missing = EXPECTED_TABLES - tables
