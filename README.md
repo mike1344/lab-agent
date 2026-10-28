@@ -230,8 +230,8 @@ node scripts\approval-visual-check.mjs
 一条命令完成「安装依赖 → ruff 门禁 → 后端回归测试 → 前端单测与构建」：
 
 ```powershell
-# Windows（仓库根目录）
-pwsh -File scripts\verify.ps1
+# Windows（仓库根目录；Windows PowerShell 5.1 没有 pwsh，用 powershell）
+powershell -ExecutionPolicy Bypass -File scripts\verify.ps1
 ```
 
 ```bash
