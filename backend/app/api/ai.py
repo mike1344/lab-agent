@@ -32,23 +32,28 @@ def chat_stream(data: ChatRequest, current_user: User = Depends(get_current_user
 
             # 工具事件与回答 token 全部来自图内实时透传，端点只做转发；
             # 不再另起一条模型调用路径，避免工具被重复执行、模型被重复调用。
-            for event in run_graph_stream(data.message, user_id, history):
-                event_type = event["type"]
-                if event_type == "status":
-                    yield sse_event("status", {"message": event["message"]})
-                elif event_type == "tool_start":
-                    yield sse_event("tool_start", {"label": event["label"]})
-                elif event_type == "tool_end":
-                    yield sse_event("tool_end", {"label": event["label"]})
-                    model_tool_results.append(event["result"])
-                elif event_type == "token":
-                    # 回答开始前先补发“已调用”汇总，保持和旧版一致的展示顺序。
-                    if not tools_line_sent and model_tool_results:
-                        yield sse_event("tool", {"message": "已调用：AI Tool Calling"})
-                        tools_line_sent = True
-                    yield sse_event("token", {"content": event["content"]})
-                elif event_type == "graph_done":
-                    final_state = event["state"]
+            stream = run_graph_stream(data.message, user_id, history)
+            try:
+                for event in stream:
+                    event_type = event["type"]
+                    if event_type == "status":
+                        yield sse_event("status", {"message": event["message"]})
+                    elif event_type == "tool_start":
+                        yield sse_event("tool_start", {"label": event["label"]})
+                    elif event_type == "tool_end":
+                        yield sse_event("tool_end", {"label": event["label"]})
+                        model_tool_results.append(event["result"])
+                    elif event_type == "token":
+                        # 回答开始前先补发“已调用”汇总，保持和旧版一致的展示顺序。
+                        if not tools_line_sent and model_tool_results:
+                            yield sse_event("tool", {"message": "已调用：AI Tool Calling"})
+                            tools_line_sent = True
+                        yield sse_event("token", {"content": event["content"]})
+                    elif event_type == "graph_done":
+                        final_state = event["state"]
+            finally:
+                # 浏览器断连时关闭图生成器，触发 cancel_event，跳过尚未执行的工具。
+                stream.close()
 
             # 命中知识库时把引用来源回传给前端展示（标题/章节/相关度）
             retrieved_docs = final_state.get("retrieved_docs") or []
