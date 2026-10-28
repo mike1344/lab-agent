@@ -18,31 +18,33 @@
     </div>
 
     <el-table v-loading="loadingValue" :data="reservationList" stripe>
-      <el-table-column v-if="isStaff" prop="user_name" label="预约人" min-width="110" />
-      <el-table-column prop="lab_name" label="实验室" min-width="140" />
-      <el-table-column prop="reservation_date" label="预约日期" width="120" />
-      <el-table-column label="预约时间" width="150">
+      <el-table-column v-if="isStaff" prop="user_name" label="预约人" min-width="100" />
+      <el-table-column prop="lab_name" label="实验室" min-width="130" />
+      <el-table-column prop="reservation_date" label="预约日期" width="110" />
+      <el-table-column label="预约时间" width="130">
         <template #default="scope">{{ formatTime(scope.row.start_time) }} - {{ formatTime(scope.row.end_time) }}</template>
       </el-table-column>
-      <el-table-column prop="purpose" label="用途" min-width="180" show-overflow-tooltip />
-      <el-table-column label="状态" width="100">
+      <el-table-column prop="purpose" label="用途" min-width="150" show-overflow-tooltip />
+      <el-table-column label="状态" width="90">
         <template #default="scope"><el-tag :type="statusMap[scope.row.status]?.type">{{ statusMap[scope.row.status]?.label || scope.row.status }}</el-tag></template>
       </el-table-column>
-      <el-table-column label="审批进度" width="190">
+      <el-table-column label="审批进度" width="120">
         <template #default="{ row }">
-          <el-tag v-if="row.approval" size="small" :type="approvalTagType(row)">{{ approvalText(row) }}</el-tag>
+          <el-tag v-if="row.approval" size="small" :type="approvalTagType(row)" :title="approvalTitle(row)">
+            {{ approvalText(row) }}
+          </el-tag>
           <span v-else class="operation-finished">单级审核</span>
         </template>
       </el-table-column>
-      <el-table-column prop="review_comment" label="审核意见" min-width="160" show-overflow-tooltip />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column prop="review_comment" label="审核意见" min-width="130" show-overflow-tooltip />
+      <el-table-column label="操作" width="220" fixed="right">
         <template #default="scope">
           <template v-if="isStaff && scope.row.status === 'pending'">
             <template v-if="scope.row.can_review">
               <el-button link type="success" @click="openReviewDialog(scope.row, 'approved')">通过</el-button>
               <el-button link type="danger" @click="openReviewDialog(scope.row, 'rejected')">拒绝</el-button>
             </template>
-            <el-tag v-else type="info" size="small">待「{{ scope.row.approval?.current_step_name || '审批' }}」</el-tag>
+            <el-tag v-else type="info" size="small" :title="scope.row.approval?.current_step_name || '待审批'">待审批</el-tag>
           </template>
           <template v-else-if="!isStaff && scope.row.status === 'pending'">
             <el-button link type="primary" @click="openEditDialog(scope.row)">修改</el-button>
@@ -195,11 +197,16 @@ const reviewTitle = computed(() => {
 
 const approvalText = (row) => {
   const approval = row.approval
-  if (row.status === 'approved') return `已完成 ${approval.total_steps} 级审批`
-  if (row.status === 'rejected') return '审批未通过'
-  if (row.status === 'cancelled') return '审批已取消'
-  if (row.status === 'expired') return '审批已终止'
-  return `第 ${approval.current_step}/${approval.total_steps} 步 · ${approval.current_step_name}`
+  if (row.status === 'approved') return '已完成'
+  if (row.status === 'rejected') return '未通过'
+  if (row.status === 'cancelled') return '已取消'
+  if (row.status === 'expired') return '已终止'
+  return `${approval.current_step}/${approval.total_steps} 步`
+}
+const approvalTitle = (row) => {
+  const approval = row.approval
+  if (!approval) return ''
+  return `第 ${approval.current_step}/${approval.total_steps} 步 · ${approval.current_step_name}（审批人：${approval.current_approver || '不限'}）`
 }
 const approvalTagType = (row) => {
   if (row.status === 'approved') return 'success'

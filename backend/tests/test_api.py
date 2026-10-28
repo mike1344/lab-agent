@@ -2319,6 +2319,7 @@ class ApiFlowTest(unittest.TestCase):
         self.assertEqual(approval["current_step_name"], "导师初审")
         self.assertFalse(approval["can_review"])
         self.assertTrue(approval["is_requester"])
+        self.assertFalse(created["data"][0]["can_review"])
 
         # 已有进行中的预约时，不允许删除流程或调整节点
         self.assertEqual(
@@ -2352,6 +2353,9 @@ class ApiFlowTest(unittest.TestCase):
         )
 
         # 第一节点通过后仍是待审核，第二节点由管理员处理
+        teacher_a_all = self.client.get("/api/reservations", headers=teacher_a_headers).json()["data"]
+        teacher_a_row = next(item for item in teacher_a_all if item["id"] == reservation_id)
+        self.assertTrue(teacher_a_row["can_review"])
         first_approved = self.client.put(
             f"/api/reservations/{reservation_id}/review",
             headers=teacher_a_headers,
@@ -2499,6 +2503,13 @@ class ApiFlowTest(unittest.TestCase):
             },
         ).json()["data"][0]
         self.assertIsNone(plain["approval"])
+        self.assertFalse(plain["can_review"])
+        plain_row = next(
+            item
+            for item in self.client.get("/api/reservations", headers=admin_headers).json()["data"]
+            if item["id"] == plain["id"]
+        )
+        self.assertTrue(plain_row["can_review"])
         self.assertEqual(
             self.client.delete(f"/api/approval-flows/{flow_id}", headers=admin_headers).status_code,
             400,

@@ -53,6 +53,8 @@ def reservation_to_dict(reservation: Reservation, current_user: User) -> dict:
         "status": reservation.status,
         "review_comment": reservation.review_comment,
         "create_time": reservation.create_time,
+        # 顶层冗余一份当前用户能否审核，前端表格不必再区分“有无审批流”两种结构。
+        "can_review": can_user_review(reservation, current_user),
         "approval": approval_summary(reservation, current_user),
     }
 
