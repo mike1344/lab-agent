@@ -8,25 +8,31 @@
 
 | 数据 | 数量 |
 | --- | --- |
-| 用户 | 25（18 学生 + 2 教师 + 管理员/E2E 账号） |
-| 实验室 | 17 |
-| 设备 | 24 |
+| 用户 | 36（18 PKU 学生 + 8 OPS 演示学生 + 2 教师 + 管理员/E2E） |
+| 实验室 | 18（17 个演示实验室 + E2E 验收实验室） |
+| 设备 | 58 类，覆盖全部 17 个演示实验室 |
+| 采购 | 117（32 已验收、34 已到货、51 申请中） |
+| 报修 | 21（7 待处理、7 处理中、7 已解决） |
 | 实验课程 | 2（含选课名单） |
-| 预约 | 203（60 已通过、40 待审核，其余为历史终态） |
+| 预约 | 255（152 条未来预约；含 97 已通过、54 待审核；其中 51 条 OPS 批量预约） |
 
-重新生成（幂等，会补充未来 12 天的预约）：
+重新生成（幂等，会补充未来预约）：
 
 ```powershell
 cd F:\fastapi项目实战\lab_agent\backend
 .\.venv\Scripts\python.exe scripts\generate_pku_seed.py --execute
+.\.venv\Scripts\python.exe scripts\seed_ops_demo.py
 .\.venv\Scripts\python.exe scripts\verify_seed.py
 ```
+
+> `seed_ops_demo.py` 会给每个实验室补充 2 类设备（数量按容量配比），生成验收/到货/申请中的采购记录、待处理/处理中/已解决的报修，并用专用 OPS 学生生成未来预约；重复执行不会重复入库。
 
 ## 2. 可用账号
 
 | 角色 | 账号 | 密码 | 用途 |
 | --- | --- | --- | --- |
 | 学生 | `pku_cs2401_01` ～ `pku_cs2401_18` | `Student123456` | 预约、修改、取消、查看通知 |
+| OPS 学生 | `ops_student_01` ～ `ops_student_08` | `Student123456` | 演示批量预约/报修 |
 | 教师 | `pku_teacher_li` / `pku_teacher_wang` | `Teacher123456` | 预约审核 |
 | 管理员 | `e2e_admin` | `E2eAdmin123!` | 审批流配置、报表、操作日志、导出 |
 | E2E 学生 | `e2e_student` | `E2eStudent123!` | 端到端脚本专用 |
